@@ -1,0 +1,3 @@
+[submodule "wakawidget"]
+	path = wakawidget
+	url = https://github.com/vxsl/wakawidget
