@@ -2,81 +2,37 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 import Control.Monad
-import Control.Monad.Cont (liftM)
-import Data.Bool
-import Data.Functor
 import Data.List
 import Data.Map qualified as M
 import Data.Maybe
-import Data.Monoid
-import Data.Ord
-import Data.Tree
-import Foreign.C.String
-import Graphics.X11 (controlMask, mod1Mask, mod4Mask, shiftMask)
-import Graphics.X11.ExtraTypes (xF86XK_AudioLowerVolume, xF86XK_AudioMute, xF86XK_AudioRaiseVolume)
-import Graphics.X11.Xinerama (getScreenInfo)
+import Graphics.X11
+import Graphics.X11.ExtraTypes
 import System.Exit
-import System.IO.Error (catchIOError)
-import System.Process (readProcess)
-import Text.Read (Lexeme (Number), readMaybe)
+import Text.Read (readMaybe)
 import XMonad
-import XMonad (Layout)
-import XMonad.Actions.CopyWindow (copyToAll)
 import XMonad.Actions.CycleWS
-import XMonad.Actions.CycleWindows
-import XMonad.Actions.CycleWorkspaceByScreen
-import XMonad.Actions.GridSelect
 import XMonad.Actions.GroupNavigationPatched qualified as GNP
-import XMonad.Actions.KeyRemap
 import XMonad.Actions.OnScreen
 import XMonad.Actions.SinkAll
-import XMonad.Actions.SpawnOn
-import XMonad.Actions.TreeSelect qualified as TS
-import XMonad.Actions.UpdatePointer (updatePointer)
 import XMonad.Actions.WindowBringer
-import XMonad.Actions.WindowGo
-import XMonad.Core
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.EwmhDesktops
-import XMonad.Hooks.Focus
 import XMonad.Hooks.ManageDocks
-import XMonad.Hooks.ManageHelpers (doCenterFloat)
 import XMonad.Hooks.RefocusLast
-import XMonad.Hooks.WorkspaceHistory
-import XMonad.Layout.FixedColumn
-import XMonad.Layout.Fullscreen (fullscreenSupport, fullscreenSupportBorder)
 import XMonad.Layout.Grid
 import XMonad.Layout.IndependentScreens
-import XMonad.Layout.LayoutScreens
-import XMonad.Layout.MultiColumns (multiCol)
-import XMonad.Layout.MultiToggle
-import XMonad.Layout.MultiToggle.Instances
-import XMonad.Layout.NoBorders
 import XMonad.Layout.PerScreen (ifWider)
-import XMonad.Layout.PerWorkspace
 import XMonad.Layout.ShowWName
-import XMonad.Layout.Spacing
 import XMonad.Layout.ThreeColumns
-import XMonad.Layout.TwoPane
-import XMonad.ManageHook
 import XMonad.Prompt
 import XMonad.Prompt.ConfirmPrompt
-import XMonad.Prompt.FuzzyMatch
-import XMonad.Prompt.Shell (shellPrompt)
 import XMonad.Prompt.Window
 import XMonad.StackSet qualified as W
 import XMonad.Util.EZConfig (additionalKeys)
-import XMonad.Util.Font
-import XMonad.Util.Loggers
 import XMonad.Util.NamedScratchpad
-import XMonad.Util.NamedWindows (getName, unName)
-import XMonad.Util.Paste
 import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
-import XMonad.Util.Timer
-import XMonad.Util.WindowProperties
 import XMonad.Util.WorkspaceCompare
-import XMonad.Util.XUtils
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
