@@ -243,7 +243,7 @@ winBindsIDE keycodes =
           }
       where
         name = "customvsc_" ++ show i
-        dir = "$(sed -n " ++ show i ++ "p $HOME/.xmonad/code_workspaces.sh | sed 's/ .*//')"
+        dir = "$(sed -n " ++ show i ++ "p $HOME/.xmonad/code_workspaces | sed 's/ .*//')"
 
 winBindsTmuxaStableView :: b -> String -> [((KeyMask, b), X ())]
 winBindsTmuxaStableView keySym name =
