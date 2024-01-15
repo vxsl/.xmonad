@@ -1,3 +1,6 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+
 import Control.Monad
 import Control.Monad.Cont (liftM)
 import Data.Bool
@@ -9,19 +12,21 @@ import Data.Monoid
 import Data.Ord
 import Data.Tree
 import Foreign.C.String
-import Graphics.X11 (controlMask, mod1Mask, xK_semicolon)
+import Graphics.X11 (controlMask, mod1Mask, mod4Mask, shiftMask)
+import Graphics.X11.ExtraTypes (xF86XK_AudioLowerVolume, xF86XK_AudioMute, xF86XK_AudioRaiseVolume)
 import Graphics.X11.Xinerama (getScreenInfo)
 import System.Exit
 import System.IO.Error (catchIOError)
 import System.Process (readProcess)
 import Text.Read (Lexeme (Number), readMaybe)
 import XMonad
+import XMonad (Layout)
 import XMonad.Actions.CopyWindow (copyToAll)
 import XMonad.Actions.CycleWS
 import XMonad.Actions.CycleWindows
 import XMonad.Actions.CycleWorkspaceByScreen
 import XMonad.Actions.GridSelect
-import XMonad.Actions.GroupNavigationPatched
+import XMonad.Actions.GroupNavigationPatched qualified as GNP
 import XMonad.Actions.KeyRemap
 import XMonad.Actions.OnScreen
 import XMonad.Actions.SinkAll
@@ -60,7 +65,7 @@ import XMonad.Prompt.FuzzyMatch
 import XMonad.Prompt.Shell (shellPrompt)
 import XMonad.Prompt.Window
 import XMonad.StackSet qualified as W
-import XMonad.Util.EZConfig (additionalKeys, additionalKeysP)
+import XMonad.Util.EZConfig (additionalKeys)
 import XMonad.Util.Font
 import XMonad.Util.Loggers
 import XMonad.Util.NamedScratchpad
@@ -73,97 +78,46 @@ import XMonad.Util.WindowProperties
 import XMonad.Util.WorkspaceCompare
 import XMonad.Util.XUtils
 
-myModMask = mod4Mask
-
+winMask, altMask :: KeyMask
+winMask = mod4Mask
 altMask = mod1Mask
 
-myNormalBorderColor = "#000000"
+------------------------------------------------------------------------
+-- workspaces:
+numScreens :: ScreenId
+numScreens = 3
 
-myFocusedBorderColor = "#ffffff"
+numWorkspacesPerScreen :: Int
+numWorkspacesPerScreen = 9
 
-myWorkspaces = withScreens 3 ([show n | n <- [1 .. 9]])
+myWorkspaces :: [String]
+myWorkspaces = withScreens numScreens ([show n | n <- [1 .. numWorkspacesPerScreen]])
 
+------------------------------------------------------------------------
+-- misc. helpers:
+debugLog :: Show a => a -> X ()
 debugLog str =
   io $ appendFile "/home/kyle/.xmonad-debug-log" $ show str ++ "\n"
 
-confirm = confirmPrompt myPromptConfig
+compareNumbers :: String -> String -> Ordering
+compareNumbers a b =
+  case (readMaybe a :: Maybe Int, readMaybe b :: Maybe Int) of
+    -- if they're both valid numbers then compare them
+    (Just x, Just y) -> compare x y
+    -- push numbers to the front of strings
+    (Nothing, Just _) -> GT
+    (Just _, Nothing) -> LT
+    -- strings get normal string comparison
+    (Nothing, Nothing) -> compare a b
 
-myKeys :: XConfig Layout -> M.Map (KeyMask, KeySym) (X ())
-myKeys conf@XConfig {} =
-  M.fromList $
-    [ ((myModMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
-      ((myModMask, xK_space), spawn "dmenu-custom"),
-      ((myModMask, xK_Escape), kill),
-      ((myModMask + shiftMask, xK_space), sendMessage NextLayout),
-      ((altMask, xK_Tab), windows W.focusDown),
-      ((myModMask, xK_j), windows W.focusDown),
-      ((altMask + shiftMask, xK_Tab), windows W.focusUp),
-      ((myModMask, xK_k), windows W.focusUp),
-      ((myModMask .|. shiftMask, xK_j), windows W.swapDown),
-      ((myModMask .|. shiftMask, xK_k), windows W.swapUp),
-      ((myModMask, xK_h), sendMessage Shrink),
-      ((myModMask, xK_l), sendMessage Expand),
-      ((myModMask + controlMask, xK_s), withFocused $ windows . W.sink),
-      ((myModMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
-      ( (myModMask + altMask, xK_q),
-        confirm "remonad" $ spawn "remonad --restart"
-      ),
-      ( (myModMask + shiftMask + controlMask, xK_q),
-        spawn "configure-multihead"
-      )
-    ]
-      ++ [ ((m .|. myModMask, k), windows $ onCurrentScreen f i)
-           | (i, k) <- zip (workspaces' conf) [xK_1 .. xK_9],
-             (f, m) <- [(W.view, 0), (W.shift, shiftMask)]
-         ]
-      ++ [ ((m, key), do screenWorkspace sc >>= flip whenJust (windows . f))
-           | (key, sc) <- zip [xK_comma, xK_period, xK_slash, xK_Shift_R, xK_Up] [0 ..],
-             (f, m) <- [(W.view, myModMask)]
-         ]
+doOnScreen :: ScreenId -> X () -> X ()
+doOnScreen s x = do
+  windows $ focusScreen s
+  x
 
 ------------------------------------------------------------------------
-
-myMouseBindings XConfig {XMonad.modMask = modm} =
-  M.fromList
-    [ ((modm, button1), \w -> focus w >> mouseMoveWindow w >> windows W.shiftMaster),
-      ((modm, button2), \w -> focus w >> windows W.shiftMaster),
-      ((modm, button3), \w -> focus w >> mouseResizeWindow w >> windows W.shiftMaster)
-    ]
-
-myLayout =
-  ifWider
-    2561
-    (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
-    (tiled ||| Mirror tiled ||| Full ||| Grid)
-  where
-    tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
-    nmaster = 1 -- The default number of windows in the master pane
-    ratio = 3 / 5 -- Default proportion of screen occupied by master pane
-    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
-
-coerceScreenID :: ScreenId -> String
-coerceScreenID (S i) = show i
-
-viewAllWorkspaces i =
-  mapM_
-    ( \n -> do
-        let id = coerceScreenID i ++ "_" ++ show n
-        -- debugLog $ "viewAllWorkspaces - " ++ id
-        windows $ viewOnScreen i id
-    )
-    ([1 .. 9] ++ [1])
-
--- there seems to be some kind of race condition that sometimes prevents the trailing [1]  from working in viewAllWorkspaces:
-ensureFirstWorkspace i = do
-  let id = coerceScreenID i ++ "_1"
-  -- debugLog $ "ensure - " ++ id
-  windows $ viewOnScreen i id
-
-myStartupHook = do
-  spawnOnce "nitrogen --restore &"
-  mapM_ viewAllWorkspaces [0 .. 2]
-  mapM_ ensureFirstWorkspace [0 .. 2]
-
+-- prompt:
+myPromptConfig :: XPConfig
 myPromptConfig =
   def
     { bgColor = "#2600ff",
@@ -177,8 +131,56 @@ myPromptConfig =
       searchPredicate = isInfixOf
     }
 
+confirmCmd :: String -> X ()
+confirmCmd cmd = confirmPrompt myPromptConfig cmd $ spawn cmd
+
+confirm :: String -> X () -> X ()
+confirm = confirmPrompt myPromptConfig
+
 ------------------------------------------------------------------------
---
+-- layout:
+myLayout =
+  ifWider
+    2561
+    (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
+    (tiled ||| Mirror tiled ||| Full ||| Grid)
+  where
+    tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
+    nmaster = 1 -- The default number of windows in the master pane
+    ratio = 3 / 5 -- Default proportion of screen occupied by master pane
+    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
+
+------------------------------------------------------------------------
+-- mouse bindings:
+myMouseBindings :: XConfig Layout -> M.Map (KeyMask, Button) (Window -> X ())
+myMouseBindings XConfig {XMonad.modMask = modm} =
+  M.fromList
+    [ ((modm, button1), \w -> focus w >> mouseMoveWindow w >> windows W.shiftMaster),
+      ((modm, button2), \w -> focus w >> windows W.shiftMaster),
+      ((modm, button3), \w -> focus w >> mouseResizeWindow w >> windows W.shiftMaster)
+    ]
+
+------------------------------------------------------------------------
+-- startup hook:
+myStartupHook :: X ()
+myStartupHook = do
+  spawnOnce "nitrogen --restore &"
+  mapM_ viewAllWorkspaces [0 .. (numScreens - 1)]
+  mapM_ ensureFirstWorkspace [0 .. (numScreens - 1)]
+  windows $ focusScreen 0
+  where
+    viewAllWorkspaces i =
+      mapM_
+        ( \n -> do
+            let id = show i ++ "_" ++ show n
+            windows $ viewOnScreen i id
+        )
+        ([1 .. numWorkspacesPerScreen] ++ [1])
+    ensureFirstWorkspace i = windows $ viewOnScreen i $ show i ++ "_1"
+
+------------------------------------------------------------------------
+-- app rules:
+myManageHook :: ManageHook
 myManageHook =
   composeAll
     [ className =? "zenity" --> doFloat,
@@ -190,146 +192,153 @@ myManageHook =
     ]
 
 ------------------------------------------------------------------------
-compareNumbers :: String -> String -> Ordering
-compareNumbers a b =
-  case (readMaybe a :: Maybe Int, readMaybe b :: Maybe Int) of
-    -- if they're both valid numbers then compare them
-    (Just x, Just y) -> compare x y
-    -- push numbers to the front of strings
-    (Nothing, Just _) -> GT
-    (Just _, Nothing) -> LT
-    -- strings get normal string comparison
-    (Nothing, Nothing) -> compare a b
+-- seeWin: a function to get the next occurrence of a window matching a query
+data SeeWinParams = SeeWinParams
+  { queryStr :: String,
+    notFoundAction :: X (),
+    greedy :: Bool,
+    searchBackwards :: Bool,
+    exact :: Bool,
+    useClassName :: Bool,
+    extraAction :: X () -- extra action to perform when the window is found or created
+  }
 
-showWorkspaceIDWhenSwitching =
-  showWName' $
-    def
-      { swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
-        swn_fade = 0.5,
-        swn_bgcolor = "blue",
-        swn_color = "red"
-      }
+defaultSeeWinParams :: SeeWinParams -- default SeeWinParams
+defaultSeeWinParams =
+  SeeWinParams
+    { useClassName = False,
+      exact = False,
+      greedy = False,
+      searchBackwards = False,
+      extraAction = mempty
+    }
 
-fuzzyQuery str = fmap (isInfixOf str) appName
+winQuery :: Bool -> Bool -> String -> Query Bool
+winQuery useClassName exact str =
+  fmap fn prop
+  where
+    fn = if exact then (str ==) else isInfixOf str
+    prop = if useClassName then className else appName
 
-eqQuery str = fmap (str ==) appName
-
-fuzzyQueryClassName str = fmap (isInfixOf str) className
-
-eqQueryClassName str = fmap (str ==) className
-
-eqQueryAppName str = fmap (str ==) appName
-
-getWinByClassName :: String -> Direction -> X (Maybe Window)
-getWinByClassName name direction =
-  getNextMatch (eqQueryClassName name) direction
-
-getWinByAppName :: String -> Direction -> X (Maybe Window)
-getWinByAppName name direction =
-  getNextMatch (eqQueryAppName name) direction
-
-seeWin name or mod reverse exact queryClassName =
+seeWin :: SeeWinParams -> X ()
+seeWin SeeWinParams {queryStr, notFoundAction, greedy, searchBackwards, exact, useClassName, extraAction} =
   do
     win <-
-      getNextMatch
-        ( ( if queryClassName
-              then (if exact then eqQueryClassName else fuzzyQueryClassName)
-              else (if exact then eqQuery else fuzzyQuery)
-          )
-            name
-        )
-        (if reverse then Backward else Forward)
+      GNP.getNextMatch
+        (winQuery useClassName exact queryStr)
+        (if searchBackwards then GNP.Backward else GNP.Forward)
     if isJust win
       then do
         let w = fromJust win
-        if mod then windows $ bringWindow w else mempty
+        if greedy then windows $ bringWindow w else mempty
         windows $ focusWindow' w
-      else or
+      else notFoundAction
+    do extraAction
 
--- winBinds :: b -> String -> X -> [((KeyMask, b), X ())]
-winBindsForward' key name or exact queryClassName =
-  [ ((altMask, key), seeWin name or False False exact queryClassName),
-    ( (altMask + shiftMask, key),
-      seeWin name mempty True False exact queryClassName
-    )
-  ]
+------------------------------------------------------------------------
+-- winBinds: function to get the keybindings for cycling through windows via seeWin
+data WinBindsParams = WinBindsParams
+  { keySym :: KeySym,
+    queryStr :: String,
+    notFoundAction :: X (),
+    exact :: Bool,
+    useClassName :: Bool,
+    extraAction :: X () -- extra action to perform when the window is found or created
+  }
 
-winBinds' key name or exact queryClassName =
-  winBindsForward' key name or exact queryClassName
-    ++ [ ( (altMask + controlMask, key),
-           seeWin name mempty False True exact queryClassName
-         )
-         --  ((altMask + shiftMask + controlMask, key), seeWin name mempty True True exact queryClassName)
-       ]
+defaultWinBindsParams :: WinBindsParams -- default WinBindsParams
+defaultWinBindsParams =
+  WinBindsParams
+    { exact = False,
+      useClassName = False,
+      extraAction = mempty
+    }
 
-winBindsExactClassName key name or = winBinds' key name or True True
-
-winBindsExact key name or = winBinds' key name or True False
-
-winBinds key name or = winBinds' key name or False False
-
-winBindsClassName key name or = winBinds' key name or False True
-
-winBindsPlusAction key name or = winBinds' key name or False False
-
-tmuxaBinds :: b -> String -> String -> [((KeyMask, b), X ())]
-tmuxaBinds key name dir =
-  [ ((altMask, key), seeWin tmuxaName or False False False False),
-    ((altMask + shiftMask, key), seeWin tmuxaName or True False False False),
-    ((altMask + controlMask, key), seeWin tmuxaName or False True False False),
-    ( (altMask + shiftMask + controlMask, key),
-      seeWin tmuxaName or True True False False
-    )
+winBinds :: WinBindsParams -> [((KeyMask, KeySym), X ())]
+winBinds WinBindsParams {keySym, queryStr, notFoundAction, exact, useClassName, extraAction} =
+  [ ((altMask, keySym), seeWin params),
+    ((altMask + shiftMask, keySym), seeWin params {greedy = True}),
+    ((altMask + controlMask, keySym), seeWin params {searchBackwards = True})
   ]
   where
-    tmuxaName = "tmuxa-" ++ name
-    or =
-      spawn $
-        "alacritty --class "
-          ++ tmuxaName
-          ++ " -e zsh -c \"tmuxa "
-          ++ tmuxaName
-          ++ " "
-          ++ dir
-          ++ "\""
+    params :: SeeWinParams
+    params =
+      defaultSeeWinParams
+        { queryStr = queryStr,
+          notFoundAction = notFoundAction,
+          exact = exact,
+          useClassName = useClassName,
+          extraAction = extraAction
+        }
 
-doubleWinBinds key name name2 or =
-  [ ( (altMask, key),
-      do
-        seeWin name or False False False False
-        seeWin name2 mempty False False False False
-    ),
-    ( (altMask + shiftMask, key),
-      do
-        seeWin name or True False False False
-        seeWin name2 mempty True False False False
-    ),
-    ( (altMask + controlMask, key),
-      do
-        seeWin name or False True False False
-        seeWin name2 mempty False True False False
-    ),
-    ( (altMask + shiftMask + controlMask, key),
-      do
-        seeWin name or True True False False
-        seeWin name2 mempty True True False False
-    )
-  ]
-
-spSize = 9.7
-
-scratchpadRect = W.RationalRect ((10 - spSize) / 20) ((10 - spSize) / 20) (spSize / 10) (spSize / 10)
-
-sizedScratchpadRect s = center s s
+winBindsIDE :: [KeySym] -> [((KeyMask, KeySym), X ())]
+winBindsIDE keycodes =
+  concat $ zipWith binds [1 ..] keycodes
   where
-    center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
+    binds :: Int -> KeySym -> [((KeyMask, KeySym), X ())]
+    binds i keySym =
+      winBinds
+        defaultWinBindsParams
+          { keySym = keySym,
+            queryStr = name,
+            notFoundAction =
+              spawn $
+                "not-dotfiles spawn-with-name " ++ name ++ " Code \"code-insiders --disable-gpu -n " ++ dir ++ "\" 2"
+          }
+      where
+        name = "customvsc_" ++ show i
+        dir = "$(sed -n " ++ show i ++ "p $HOME/.xmonad/code_workspaces.sh | sed 's/ .*//')"
 
-type NSPDef = (String, String, Query Bool, ManageHook)
+winBindsTmuxaStableView :: b -> String -> [((KeyMask, b), X ())]
+winBindsTmuxaStableView keySym name =
+  [ ((altMask, keySym), seeWin params),
+    ((altMask + shiftMask, keySym), seeWin params {greedy = True})
+  ]
+  where
+    notFoundAction = spawn $ "unique-term " ++ name ++ " \"tmuxa " ++ name ++ "\""
+    params :: SeeWinParams
+    params = defaultSeeWinParams {queryStr = name, notFoundAction = notFoundAction}
 
-shyNSPDefs :: [NSPDef]
-shyNSPDefs =
-  [ ( "floatllm",
-      "firefox -P clone1 --class floatllm --new-window \
+type AbbreviatedWinBindsParams = (KeySym, String, X (), Maybe WinBindsParams)
+
+ezWinBinds :: [AbbreviatedWinBindsParams] -> [((KeyMask, KeySym), X ())]
+ezWinBinds =
+  concatMap
+    ( \(keySym, queryStr, notFoundAction, ops') -> do
+        winBinds $
+          if isJust ops'
+            then do
+              let ops = fromJust ops'
+              defaultWinBindsParams
+                { keySym = keySym,
+                  queryStr = queryStr,
+                  notFoundAction = notFoundAction,
+                  exact = ops.exact,
+                  useClassName = ops.useClassName,
+                  extraAction = ops.extraAction
+                }
+            else
+              defaultWinBindsParams
+                { keySym = keySym,
+                  queryStr = queryStr,
+                  notFoundAction = notFoundAction
+                }
+    )
+
+------------------------------------------------------------------------
+-- named scratchpads ("NSPs"):
+type NSPDef =
+  ( String, -- scratchpad name
+    String, -- command used to run application
+    Query Bool, -- query to find already running application
+    ManageHook, -- manage hook called for application window, use it to define the placement.
+    Bool -- hide on focus loss
+  )
+
+nspDefs :: [NSPDef]
+nspDefs =
+  [ ( "NSP_assistant",
+      "firefox -P clone1 --class NSP_assistant --new-window \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
@@ -337,267 +346,281 @@ shyNSPDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/?model=gpt-4",
-      className =? "floatllm",
-      customFloating $ sizedScratchpadRect 0.5
+      className =? "NSP_assistant",
+      customFloating $ nspRect 0.5,
+      True
     ),
-    ( "floatbrowse",
-      "firefox -P clone3 --class floatbrowse",
-      className =? "floatbrowse",
-      mempty
-    )
-  ]
-
-confidentNSPDefs :: [NSPDef]
-confidentNSPDefs =
-  [ ( "floattmuxa-1",
-      tmuxaName,
-      className =? "floattmuxa-1",
-      customFloating scratchpadRect
+    ( "NSP_browse",
+      "firefox -P clone3 --class NSP_browse",
+      className =? "NSP_browse",
+      mempty,
+      True
     ),
-    ( "pane-clone-floattmuxa-1",
-      tmuxaPaneCloneName,
-      className =? "pane-clone-floattmuxa-1",
-      customFloating scratchpadRect
+    ( "NSP_tmuxa-1",
+      "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
+      className =? "NSP_tmuxa-1",
+      customFloating $ nspRect 0.97,
+      False
     ),
-    ( "floattmuxa-2",
-      tmuxaName2,
-      className =? "floattmuxa-2",
-      customFloating scratchpadRect
+    ( "NSP_tmuxa-2",
+      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\"",
+      className =? "NSP_tmuxa-2",
+      customFloating $ nspRect 0.97,
+      False
     ),
-    ( "float-web-search-prompt",
-      "alacritty --class float-web-search-prompt -e zsh",
-      className =? "float-web-search-prompt",
-      customFloating $ sizedScratchpadRect 0.3
-    ),
-    ( "floataudio",
-      "firefox -P clone2 --class floataudio --new-window \
+    ( "NSP_audio",
+      "firefox -P clone2 --class NSP_audio --new-window \
       \-new-tab -url https://open.spotify.com/ \
       \-new-tab -url https://noises.online/",
-      className =? "floataudio",
-      customFloating $ sizedScratchpadRect 0.7
+      className =? "NSP_audio",
+      customFloating $ nspRect 0.7,
+      False
     )
   ]
   where
-    tmuxaName = "alacritty --class " ++ "floattmuxa-1" ++ " -e zsh -c \" tmuxa tmuxa-scm $HOME\""
-    tmuxaPaneCloneName = "alacritty --class " ++ "pane-clone-floattmuxa-1" ++ " -e sh -c \"tmux attach-session -t clone\""
-    tmuxaName2 = "alacritty --class " ++ "floattmuxa-2" ++ " -e zsh -c \" tmuxa  tmuxa-work $HOME\""
+    nspRect s = center s s
+      where
+        center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
 
-mapToNS :: [NSPDef] -> [NamedScratchpad]
-mapToNS = map (\(n, tn, cn, cf) -> NS n tn cn cf)
+mapToNSP :: [NSPDef] -> [NamedScratchpad]
+mapToNSP = map (\(n, tn, cn, cf, _) -> NS n tn cn cf)
 
-confidentScratchpads :: [NamedScratchpad]
-confidentScratchpads = mapToNS confidentNSPDefs
+nsps :: [NamedScratchpad]
+nsps = mapToNSP nspDefs
 
-shyScratchpads :: [NamedScratchpad]
-shyScratchpads = mapToNS shyNSPDefs
+openNSP :: String -> X ()
+openNSP = namedScratchpadAction nsps
 
-scratchpads :: [NamedScratchpad]
-scratchpads = confidentScratchpads <+> shyScratchpads
-
-getWinBindsForCodeInstance :: Int -> KeySym -> [((KeyMask, KeySym), X ())]
-getWinBindsForCodeInstance i keycode =
-  winBinds
-    keycode
-    name
-    (spawn $ "not-dotfiles spawn-with-name " ++ name ++ " Code \"code-insiders --disable-gpu -n " ++ dir ++ "\" 2")
-  where
-    name = "customvsc_" ++ show i
-    dir = "$(sed -n " ++ show i ++ "p $HOME/.xmonad/code_workspaces.sh | sed 's/ .*//')"
-
-getWinBindsForCodeInstances keycodes =
-  concat $
-    zipWith
-      getWinBindsForCodeInstance
-      [1 ..]
-      keycodes
+openNSPOnScreen :: String -> ScreenId -> X ()
+openNSPOnScreen name scn = doOnScreen scn $ namedScratchpadAction nsps name
 
 hideAllNSPs :: X ()
 hideAllNSPs = do
   mapM_
     ( \className -> do
-        win <- getWinByClassName className Forward
+        win <- getWinByClassName className GNP.Forward
         when (isJust win) $ do
           let w = fromJust win
           windows $ W.shiftWin "NSP" w
     )
     classNames
   where
-    classNames = map (\(className, _, _, _) -> className) (confidentNSPDefs <+> shyNSPDefs)
+    classNames :: [String]
+    classNames = map (\(className, _, _, _, _) -> className) nspDefs
+    getWinByClassName :: String -> GNP.Direction -> X (Maybe Window)
+    getWinByClassName name = GNP.getNextMatch $ winQuery True True name
 
-doOnScreen :: ScreenId -> X () -> X ()
-doOnScreen s x = do
-  windows $ focusScreen s
-  x
-
--- main
 ------------------------------------------------------------------------
-main =
-  spawnPipe "/usr/bin/xmobar -x 2 $HOME/.xmonad/xmobarrc" >>= \xmproc ->
-    xmonad $
-      ewmh $
-        docks $
-          def
-            { terminal = "alacritty",
-              focusFollowsMouse = True,
-              clickJustFocuses = False,
-              borderWidth = 1,
-              modMask = myModMask,
-              startupHook = myStartupHook,
-              workspaces = myWorkspaces,
-              normalBorderColor = myNormalBorderColor,
-              focusedBorderColor = myFocusedBorderColor,
-              keys = myKeys,
-              mouseBindings = myMouseBindings,
-              layoutHook = refocusLastLayoutHook $ showWorkspaceIDWhenSwitching $ avoidStruts myLayout,
-              manageHook = namedScratchpadManageHook scratchpads <+> myManageHook <+> manageSpawn,
-              handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
-              logHook =
-                refocusLastLogHook
-                  >> nsHideOnFocusLoss
-                    shyScratchpads
-                    <+> dynamicLogWithPP
-                      def
-                        { ppOutput = hPutStrLn xmproc,
-                          ppSort = mkWsSort $ return compareNumbers,
-                          ppTitle = mempty,
-                          ppCurrent = xmobarColor "#00ff1e" "#000000",
-                          ppHidden = mempty,
-                          ppVisible = xmobarColor "#ff0000" "#000000",
-                          ppSep = "  ", -- between WSs and title
-                          ppWsSep = "  ",
-                          ppLayout = const ""
-                        }
-                      <> refocusLastLogHook
-            }
-            `additionalKeys` ( [ ((myModMask, 0xffff), spawn "playerctl play-pause"),
-                                 ((myModMask + shiftMask + controlMask, 0xffff), spawn "playerctl pause"),
-                                 ((altMask, xK_h), toggleFocus),
-                                 ((altMask + shiftMask, xK_h), swapWithLast),
-                                 ((altMask, xK_z), hideAllNSPs),
-                                 ( (altMask, xK_Escape),
-                                   doOnScreen 0 $
-                                     namedScratchpadAction scratchpads "floattmuxa-1"
-                                 ),
-                                 ( (altMask + controlMask, xK_Escape),
-                                   doOnScreen 0 $
-                                     namedScratchpadAction scratchpads "floattmuxa-2"
-                                 ),
-                                 ( (altMask, xK_q),
-                                   doOnScreen 0 $
-                                     namedScratchpadAction scratchpads "floatllm"
-                                 ),
-                                 ( (altMask, xK_o),
-                                   doOnScreen 0 $
-                                     namedScratchpadAction scratchpads "floatbrowse"
-                                 ),
-                                 ( (altMask, xK_w),
-                                   doOnScreen 0 $
-                                     namedScratchpadAction scratchpads "floataudio"
-                                 )
-                               ]
-                                 ++ tmuxaBinds
-                                   xK_semicolon
-                                   "scm"
-                                   "$HOME/work/gui/site"
-                                 ++ tmuxaBinds
-                                   xK_comma
-                                   "work"
-                                   "$HOME/work/gui/site"
-                                 ++ tmuxaBinds
-                                   xK_v
-                                   "personal"
-                                   "$HOME"
-                                 ++ getWinBindsForCodeInstances [xK_b, xK_s]
-                                 ++ winBindsExact
-                                   xK_x
-                                   "code - insiders"
-                                   (spawn "not-dotfiles code-insiders --disable-gpu -n")
-                                 ++ winBinds
-                                   xK_d
-                                   "customvsc_dof"
-                                   (spawn "dotfiles spawn-with-name customvsc_dof Code \"code-insiders --disable-gpu -n $HOME\" 2")
-                                 ++ winBinds
-                                   xK_e
-                                   "tmux-pane-clone"
-                                   ( do
-                                       windows $ focusScreen 1
-                                       spawn "tmux-pane-clone --view"
-                                   )
-                                 ++ [ ( (altMask, xK_i),
-                                        do
-                                          spawn "$HOME/bin/personal/confwacom"
-                                          seeWin
-                                            "Scrivano"
-                                            (spawn "$HOME/dev/Scrivano_0.17.7/scrivano")
-                                            False
-                                            False
-                                            True
-                                            False
-                                      )
-                                    ]
-                                 ++ winBindsClassName
-                                   xK_p
-                                   "firefox"
-                                   (spawn "firefox --new-window")
-                                 ++ winBinds
-                                   xK_period
-                                   "google-chrome-unstable"
-                                   mempty
-                             )
-            `additionalKeysP` [
-                                ------------------------------------------------------------
-                                -- move windows among physical screens
-                                ("M-C-x", shiftNextScreen >> nextScreen),
-                                ("M-C-a", shiftPrevScreen >> prevScreen),
-                                ------------------------------------------------------------
-                                -- volume
-                                ("<Insert>", spawn "volctrl -d"),
-                                ("<Print>", spawn "volctrl -u"),
-                                ("M1-<Insert>", spawn "volctrl -dc"),
-                                ("M1-<Print>", spawn "volctrl -uc"),
-                                ("M1-S-<Insert>", spawn "volctrl -df"),
-                                ("M1-S-<Print>", spawn "volctrl -uf"),
-                                ("M1-S-C-<Insert>", spawn "volmute"),
-                                ("M1-S-C-<Print>", spawn "volmute"),
-                                ("<XF86AudioLowerVolume>", spawn "volctrl -d"),
-                                ("<XF86AudioRaiseVolume>", spawn "volctrl -u"),
-                                ("M1-<XF86AudioLowerVolume>", spawn "volctrl -dc"),
-                                ("M1-<XF86AudioRaiseVolume>", spawn "volctrl -uc"),
-                                ("M1-S-<XF86AudioLowerVolume>", spawn "volctrl -df"),
-                                ("M1-S-<XF86AudioRaiseVolume>", spawn "volctrl -uf"),
-                                ("<XF86AudioMute>", spawn "volmute"),
-                                ------------------------------------------------------------
-                                -- color temp
-                                ("M-<XF86AudioRaiseVolume>", spawn "setredshift -ti"),
-                                ("M-<XF86AudioLowerVolume>", spawn "setredshift -td"),
-                                -- brightness
-                                ("M-S-<XF86AudioRaiseVolume>", spawn "setredshift -bi"),
-                                ("M-S-<XF86AudioLowerVolume>", spawn "setredshift -bd"),
-                                -- reset color temp and brightness
-                                ("M-C-S-<XF86AudioLowerVolume>", spawn "setredshift --reset"),
-                                ------------------------------------------------------------
-                                -- apps
-                                ("M-p", spawn ""),
-                                ("M-o", spawn "firefox --new-window &"),
-                                ("M-S-o", spawn "chromium-browser &"),
-                                ("M-c", spawn "code &"),
-                                ("M-S-s", spawn "flameshot gui &"),
-                                ("M-S-e", spawn "nautilus &"),
-                                ("M-e", spawn "alacritty -e ranger"),
-                                ------------------------------------------------------------
-                                -- system
-                                ("M1-C-S-<F10>", spawn "xlock -mode random"),
-                                ("M1-C-S-<F11>", spawn "systemctl suspend"),
-                                ("M-M1-C-S-<F11>", spawn "sudo reboot now"),
-                                ------------------------------------------------------------
-                                -- scripts
-                                ("M1-S-<Delete>", spawn "vpnctrl --up"),
-                                ("M1-C-S-<Delete>", spawn "vpnctrl --down"),
-                                ------------------------------------------------------------
-                                -- xmonad
-                                ("M-f", sinkAll),
-                                ("M-S-g", windowPrompt myPromptConfig Goto allWindows),
-                                ("M-g", windowPrompt myPromptConfig Goto wsWindows),
-                                ("M1-C-S-q", rescreen)
-                                -- ("M-Tab", cycleWorkspaceOnCurrentScreen [] xK_j xK_k), -- TODO figure this out
-                              ]
+-- keybindings:
+getKeybindings conf =
+  ---------------------------------------------------------------
+  -- switch workspaces on the currently-focused screen:
+  [ ((m .|. winMask, k), windows $ onCurrentScreen f i)
+    | (i, k) <- zip (workspaces' conf) [xK_1 .. xK_9],
+      (f, m) <- [(W.view, 0), (W.shift, shiftMask)]
+  ]
+    ---------------------------------------------------------------
+    -- switch screens:
+    ++ [ ((m, key), do screenWorkspace sc >>= flip whenJust (windows . f))
+         | (key, sc) <- zip [xK_comma, xK_period, xK_slash, xK_Shift_R, xK_Up] [0 ..],
+           (f, m) <- [(W.view, winMask)]
+       ]
+    ---------------------------------------------------------------
+    -- winBinds:
+    ++ winBindsTmuxaStableView xK_semicolon "tmuxa-1"
+    ++ winBindsTmuxaStableView xK_comma "tmuxa-2"
+    ++ winBindsIDE [xK_b, xK_s]
+    ++ ezWinBinds
+      [ ( xK_x,
+          "code - insiders",
+          spawn "not-dotfiles code-insiders --disable-gpu -n",
+          Just $ defaultWinBindsParams {exact = True}
+        ),
+        ( xK_d,
+          "customvsc_dof",
+          spawn "dotfiles spawn-with-name customvsc_dof Code \"code-insiders --disable-gpu -n $HOME\" 2",
+          Nothing
+        ),
+        ( xK_e,
+          "tmux-pane-view",
+          do
+            windows $ focusScreen 1
+            spawn "tmux-pane-view --open-view",
+          Nothing
+        ),
+        ( xK_i,
+          "Scrivano",
+          spawn "scrivano",
+          Just $ defaultWinBindsParams {exact = True, extraAction = spawn "$HOME/bin/personal/confwacom"}
+        ),
+        ( xK_p,
+          "firefox",
+          spawn "firefox --new-window",
+          Just $ defaultWinBindsParams {useClassName = True}
+        ),
+        ( xK_period,
+          "google-chrome-unstable",
+          mempty,
+          Nothing
+        )
+      ]
+    ++ [
+         ---------------------------------------------------------------
+         -- window management:
+         ((altMask, xK_h), toggleFocus),
+         ((altMask + shiftMask, xK_h), swapWithLast),
+         ((winMask, xK_Escape), kill),
+         ((altMask, xK_Tab), windows W.focusDown),
+         ((winMask, xK_j), windows W.focusDown),
+         ((altMask + shiftMask, xK_Tab), windows W.focusUp),
+         ((winMask, xK_k), windows W.focusUp),
+         ((winMask .|. shiftMask, xK_j), windows W.swapDown),
+         ((winMask .|. shiftMask, xK_k), windows W.swapUp),
+         ((winMask + controlMask, xK_s), withFocused $ windows . W.sink),
+         ((winMask + controlMask, xK_x), shiftNextScreen >> nextScreen),
+         ((winMask + controlMask, xK_a), shiftPrevScreen >> prevScreen),
+         ((winMask, xK_f), sinkAll),
+         ((winMask + shiftMask, xK_g), windowPrompt myPromptConfig Goto allWindows),
+         ((winMask, xK_g), windowPrompt myPromptConfig Goto wsWindows),
+         ---------------------------------------------------------------
+         -- layout management:
+         ((winMask + shiftMask, xK_space), sendMessage NextLayout),
+         ((winMask, xK_h), sendMessage Shrink),
+         ((winMask, xK_l), sendMessage Expand),
+         ---------------------------------------------------------------
+         -- NSPs:
+         ((altMask, xK_z), hideAllNSPs),
+         ((altMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-1" 0),
+         ((altMask + controlMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-2" 0),
+         ((altMask, xK_q), openNSPOnScreen "NSP_assistant" 0),
+         ((altMask, xK_o), openNSPOnScreen "NSP_browse" 0),
+         ((altMask, xK_w), openNSPOnScreen "NSP_audio" 0),
+         ------------------------------------------------------------
+         -- volume:
+         ---------- up/down
+         ((0, xK_Insert), spawn "volctrl -d"),
+         ((0, xK_Print), spawn "volctrl -u"),
+         ((0, xF86XK_AudioLowerVolume), spawn "volctrl -d"),
+         ((0, xF86XK_AudioRaiseVolume), spawn "volctrl -u"),
+         ---------- up/down (coarse)
+         ((altMask, xK_Insert), spawn "volctrl -dc"),
+         ((altMask, xK_Print), spawn "volctrl -uc"),
+         ((altMask, xF86XK_AudioLowerVolume), spawn "volctrl -dc"),
+         ((altMask, xF86XK_AudioRaiseVolume), spawn "volctrl -uc"),
+         ---------- up/down (fine)
+         ((altMask + shiftMask, xK_Insert), spawn "volctrl -df"),
+         ((altMask + shiftMask, xK_Print), spawn "volctrl -uf"),
+         ((altMask + shiftMask, xF86XK_AudioLowerVolume), spawn "volctrl -df"),
+         ((altMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "volctrl -uf"),
+         ---------- mute
+         ((altMask + shiftMask + controlMask, xK_Print), spawn "volmute"),
+         ((altMask + shiftMask + controlMask, xF86XK_AudioRaiseVolume), spawn "volmute"),
+         ((0, xF86XK_AudioMute), spawn "volmute"),
+         ---------------------------------------------------------------
+         -- media control:
+         ((winMask, 0xffff), spawn "playerctl play-pause"),
+         ((winMask + shiftMask + controlMask, 0xffff), spawn "playerctl pause"),
+         ------------------------------------------------------------
+         -- redshift:
+         ---------- temperature
+         ((winMask, xF86XK_AudioLowerVolume), spawn "setredshift -td"),
+         ((winMask, xF86XK_AudioRaiseVolume), spawn "setredshift -ti"),
+         ---------- brightness
+         ((winMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift -bd"),
+         ((winMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "setredshift -bi"),
+         ---------- reset
+         ((winMask + controlMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "setredshift --reset"),
+         ---------------------------------------------------------------
+         -- apps
+         ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
+         ((winMask, xK_space), spawn "dmenu-custom"),
+         ((winMask + shiftMask, xK_p), spawn "flameshot gui &"),
+         ( (winMask + shiftMask, xK_e),
+           seeWin
+             SeeWinParams
+               { queryStr = "org.gnome.Nautilus",
+                 notFoundAction = spawn "nautilus",
+                 greedy = False,
+                 searchBackwards = False,
+                 exact = True,
+                 useClassName = False
+               }
+         ),
+         ( (winMask, xK_e),
+           seeWin
+             SeeWinParams
+               { queryStr = "ranger",
+                 notFoundAction = spawn "unique-term ranger ranger",
+                 greedy = False,
+                 searchBackwards = False,
+                 exact = True,
+                 useClassName = False
+               }
+         ),
+         ---------------------------------------------------------------
+         -- system
+         ((winMask + altMask, xK_q), confirmCmd "remonad --restart"),
+         ((altMask + controlMask + shiftMask, xK_F10), confirmCmd "xlock -mode random"),
+         ((altMask + controlMask + shiftMask, xK_F11), confirmCmd "systemctl suspend"),
+         ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
+         ((winMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
+         ((winMask + shiftMask + controlMask, xK_q), confirmCmd "configure-multihead"),
+         ((altMask + controlMask + shiftMask, xK_q), confirm "rescreen" rescreen),
+         ---------------------------------------------------------------
+         -- scripts
+         ((altMask + shiftMask, xK_Delete), spawn "vpnctrl --up"),
+         ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down")
+       ]
+
+------------------------------------------------------------------------
+-- main conf:
+getConf xmproc =
+  def
+    { terminal = "alacritty",
+      focusFollowsMouse = True,
+      clickJustFocuses = False,
+      borderWidth = 1,
+      modMask = winMask,
+      startupHook = myStartupHook,
+      workspaces = myWorkspaces,
+      normalBorderColor = "#000000",
+      focusedBorderColor = "#ffffff",
+      mouseBindings = myMouseBindings,
+      layoutHook =
+        refocusLastLayoutHook
+          $ ( showWName' $
+                def
+                  { swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
+                    swn_fade = 0.5,
+                    swn_bgcolor = "blue",
+                    swn_color = "red"
+                  }
+            )
+          $ avoidStruts myLayout,
+      manageHook = namedScratchpadManageHook nsps <+> myManageHook <+> manageSpawn,
+      handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
+      logHook =
+        refocusLastLogHook
+          >> nsHideOnFocusLoss
+            (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
+            <+> dynamicLogWithPP
+              def
+                { ppOutput = hPutStrLn xmproc,
+                  ppSort = mkWsSort $ return compareNumbers,
+                  ppTitle = mempty,
+                  ppCurrent = xmobarColor "#00ff1e" "#000000",
+                  ppHidden = mempty,
+                  ppVisible = xmobarColor "#ff0000" "#000000",
+                  ppSep = "  ",
+                  ppWsSep = "  ",
+                  ppLayout = const ""
+                }
+              <> refocusLastLogHook
+    }
+
+------------------------------------------------------------------------
+-- main:
+main = do
+  xmproc <- spawnPipe "/usr/bin/xmobar -x 2 $HOME/.xmonad/xmobarrc"
+  let conf = getConf xmproc
+  xmonad $ ewmh $ docks $ conf `additionalKeys` getKeybindings conf
