@@ -2,11 +2,12 @@ Config
   { font = "Liberation Mono 13",
     commands =
       [ 
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week"] "waka-week" 100,
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week-langs"] "waka-week-langs" 100,
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["today"] "waka-today" 100,
+        Run Com "/home/kyle/.xmonad/wakawidget/ww-query.sh" [] "waka-query" 1000,
+        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week"] "waka-week" 1000,
+        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week-langs"] "waka-week-langs" 1000,
+        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["today"] "waka-today" 1000,
         Run StdinReader
       ],
     sepChar = "%",
-    template = "%StdinReader%}{%waka-week% | %waka-week-langs% | %waka-today%       <fc=#00ff1e>%uname%</fc> | %date%"
+    template = "%StdinReader%}{%waka-query%%waka-week% | %waka-week-langs% | %waka-today%       <fc=#00ff1e>%uname%</fc> | %date%"
   }
