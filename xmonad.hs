@@ -121,18 +121,20 @@ myMouseBindings XConfig {XMonad.modMask = modm} =
 myStartupHook :: X ()
 myStartupHook = do
   spawnOnce "nitrogen --restore &"
-  mapM_ viewAllWorkspaces [0 .. (numScreens - 1)]
-  mapM_ ensureFirstWorkspace [0 .. (numScreens - 1)]
+  mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
   windows $ focusScreen 0
   where
-    viewAllWorkspaces i =
+    cycleAllWorkspacesOnScreen i = do
       mapM_
         ( \n -> do
             let id = show i ++ "_" ++ show n
             windows $ viewOnScreen i id
         )
         ([1 .. numWorkspacesPerScreen] ++ [1])
-    ensureFirstWorkspace i = windows $ viewOnScreen i $ show i ++ "_1"
+      windows $ viewOnScreen i $ coerceScreenID i ++ "_1"
+      where
+        coerceScreenID :: ScreenId -> String
+        coerceScreenID (S i) = show i
 
 ------------------------------------------------------------------------
 -- app rules:
