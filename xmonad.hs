@@ -314,6 +314,16 @@ nspDefs =
       mempty,
       True
     ),
+    ( "NSP_homelab",
+      "firefox -P clone4 --class NSP_homelab --new-window \
+      \-new-tab -url http://web.pve.internal/ \
+      \-new-tab -url http://pi.hole/ \
+      \-new-tab -url http://web.homebridge.internal/ \
+      \-new-tab -url http://web.nginx.internal",
+      className =? "NSP_homelab",
+      mempty,
+      True
+    ),
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
@@ -452,6 +462,7 @@ getKeybindings conf =
          ((altMask + controlMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-2" 0),
          ((altMask, xK_q), openNSPOnScreen "NSP_assistant" 0),
          ((altMask, xK_o), openNSPOnScreen "NSP_browse" 0),
+         ((altMask, xK_u), openNSPOnScreen "NSP_homelab" 0),
          ((altMask, xK_w), openNSPOnScreen "NSP_audio" 0),
          ------------------------------------------------------------
          -- volume:
