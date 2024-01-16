@@ -314,6 +314,13 @@ nspDefs =
       mempty,
       True
     ),
+    ( "NSP_project-management",
+      "firefox -P clone5 --class NSP_project-management --new-window \
+      \-new-tab -url http://web.vikunja.internal/",
+      className =? "NSP_project-management",
+      customFloating $ nspRect 0.5,
+      True
+    ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
       \-new-tab -url http://web.pve.internal/ \
@@ -457,12 +464,13 @@ getKeybindings conf =
          ((winMask, xK_l), sendMessage Expand),
          ---------------------------------------------------------------
          -- NSPs:
-         ((altMask, xK_z), hideAllNSPs),
+         ((altMask, xK_grave), hideAllNSPs),
          ((altMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-1" 0),
          ((altMask + controlMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-2" 0),
          ((altMask, xK_q), openNSPOnScreen "NSP_assistant" 0),
          ((altMask, xK_o), openNSPOnScreen "NSP_browse" 0),
-         ((altMask, xK_u), openNSPOnScreen "NSP_homelab" 0),
+         ((altMask, xK_y), openNSPOnScreen "NSP_project-management" 0),
+         ((altMask, xK_u), openNSP "NSP_homelab"),
          ((altMask, xK_w), openNSPOnScreen "NSP_audio" 0),
          ------------------------------------------------------------
          -- volume:
