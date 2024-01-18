@@ -376,20 +376,14 @@ openNSPOnScreen :: String -> ScreenId -> X ()
 openNSPOnScreen name scn = doOnScreen scn $ namedScratchpadAction nsps name
 
 hideAllNSPs :: X ()
-hideAllNSPs = do
+hideAllNSPs =
   mapM_
-    ( \className -> do
-        win <- getWinByClassName className GNP.Forward
+    ( \(_, _, q, _, _) -> do
+        win <- GNP.getNextMatch q GNP.Forward
         when (isJust win) $ do
-          let w = fromJust win
-          windows $ W.shiftWin "NSP" w
+          windows $ W.shiftWin "NSP" $ fromJust win
     )
-    classNames
-  where
-    classNames :: [String]
-    classNames = map (\(className, _, _, _, _) -> className) nspDefs
-    getWinByClassName :: String -> GNP.Direction -> X (Maybe Window)
-    getWinByClassName name = GNP.getNextMatch $ winQuery True True name
+    nspDefs
 
 ------------------------------------------------------------------------
 -- keybindings:
