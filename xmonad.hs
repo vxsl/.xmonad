@@ -537,8 +537,8 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- system
          ((winMask + altMask, xK_q), confirmCmd "remonad --restart"),
-         ((altMask + controlMask + shiftMask, xK_F10), confirmCmd "xlock -mode random"),
-         ((altMask + controlMask + shiftMask, xK_F11), confirmCmd "systemctl suspend"),
+         ((altMask + controlMask + shiftMask, xK_F10), spawn "xlock -mode random"),
+         ((altMask + controlMask + shiftMask, xK_F11), spawn "systemctl suspend"),
          ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
          ((winMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
          ((winMask + shiftMask + controlMask, xK_q), confirmCmd "configure-multihead"),
