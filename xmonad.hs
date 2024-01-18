@@ -146,7 +146,7 @@ myManageHook =
       className =? "Org.gnome.Nautilus" --> doFloat,
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
-      className =? "Google-chrome-unstable" --> doShift "2_1"
+      appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1"
     ]
 
 ------------------------------------------------------------------------
@@ -434,7 +434,7 @@ getKeybindings conf =
           Just $ defaultWinBindsParams {useClassName = True}
         ),
         ( xK_period,
-          "google-chrome-unstable",
+          "(remote-debug-profile)",
           mempty,
           Nothing
         )
