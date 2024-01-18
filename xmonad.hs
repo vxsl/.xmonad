@@ -511,7 +511,7 @@ getKeybindings conf =
          -- apps
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
-         ((winMask + shiftMask, xK_p), spawn "flameshot gui &"),
+         ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
          ( (winMask + shiftMask, xK_e),
            seeWin
              SeeWinParams
