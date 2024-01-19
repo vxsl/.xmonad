@@ -146,7 +146,8 @@ myManageHook =
       className =? "Org.gnome.Nautilus" --> doFloat,
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
-      appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1"
+      appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
+      className =? "Google-chrome-unstable" --> doShift "2_1"
     ]
 
 ------------------------------------------------------------------------
@@ -464,6 +465,7 @@ getKeybindings conf =
          ((winMask, xK_l), sendMessage Expand),
          ---------------------------------------------------------------
          -- NSPs:
+         ((winMask, xK_minus), toggleOrView "NSP"),
          ((altMask, xK_grave), hideAllNSPs),
          ((altMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-1" 0),
          ((altMask + controlMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-2" 0),
@@ -492,7 +494,7 @@ getKeybindings conf =
          ((altMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "volctrl -uf"),
          ---------- mute
          ((altMask + shiftMask + controlMask, xK_Print), spawn "volmute"),
-         ((altMask + shiftMask + controlMask, xF86XK_AudioRaiseVolume), spawn "volmute"),
+         ((altMask + shiftMask + controlMask, xF86XK_AudioLowerVolume), spawn "volmute"),
          ((0, xF86XK_AudioMute), spawn "volmute"),
          ---------------------------------------------------------------
          -- media control:
@@ -507,7 +509,7 @@ getKeybindings conf =
          ((winMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift -bd"),
          ((winMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "setredshift -bi"),
          ---------- reset
-         ((winMask + controlMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "setredshift --reset"),
+         ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),

@@ -6,8 +6,9 @@ Config
         Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week"] "waka-week" 1000,
         Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week-langs"] "waka-week-langs" 1000,
         Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["today"] "waka-today" 1000,
+        Run Com "/home/kyle/bin/aw-total-time" [] "aw-total-time" 1000,
         Run StdinReader
       ],
     sepChar = "%",
-    template = "%StdinReader%}{%waka-query%%waka-week% | %waka-week-langs% | %waka-today%       <fc=#00ff1e>%uname%</fc> | %date%"
+    template = "%StdinReader%}{%aw-total-time%      | %waka-query%%waka-week% | %waka-week-langs% | %waka-today%       <fc=#00ff1e>%uname%</fc> | %date%"
   }
