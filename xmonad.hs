@@ -223,8 +223,8 @@ defaultWinBindsParams =
 winBinds :: WinBindsParams -> [((KeyMask, KeySym), X ())]
 winBinds WinBindsParams {keySym, queryStr, notFoundAction, exact, useClassName, extraAction} =
   [ ((altMask, keySym), seeWin params),
-    ((altMask + shiftMask, keySym), seeWin params {greedy = True}),
-    ((altMask + controlMask, keySym), seeWin params {searchBackwards = True})
+    ((altMask + shiftMask, keySym), seeWin params {greedy = True})
+    -- ((altMask + controlMask, keySym), seeWin params {searchBackwards = True})
   ]
   where
     params :: SeeWinParams
