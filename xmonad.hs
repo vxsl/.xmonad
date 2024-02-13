@@ -71,6 +71,13 @@ doOnScreen s x = do
   windows $ focusScreen s
   x
 
+killAllWindowsByClass :: Query Bool -> X ()
+killAllWindowsByClass q = do
+  win <- GNP.getNextMatch q GNP.Forward
+  case win of
+    Just w -> killWindow w >> killAllWindowsByClass q
+    Nothing -> return ()
+
 ------------------------------------------------------------------------
 -- prompt:
 myPromptConfig :: XPConfig
