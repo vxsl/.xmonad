@@ -319,7 +319,7 @@ nspDefs =
     ( "NSP_browse",
       "firefox -P clone3 --class NSP_browse",
       className =? "NSP_browse",
-      mempty,
+      nonFloating,
       True
     ),
     ( "NSP_vikunja",
@@ -332,7 +332,7 @@ nspDefs =
     ( "NSP_obsidian",
       "obsidian",
       className =? "obsidian",
-      customFloating $ nspRect 0.85,
+      customFloating $ nspRect 0.95,
       False
     ),
     ( "NSP_homelab",
@@ -340,16 +340,17 @@ nspDefs =
       \-new-tab -url http://web.pve.internal/ \
       \-new-tab -url http://pi.hole/ \
       \-new-tab -url http://web.homebridge.internal/ \
+      \-new-tab -url http://localhost:5600/#/activity/$HOSTNAME \
       \-new-tab -url http://web.nginx.internal",
       className =? "NSP_homelab",
-      mempty,
+      nonFloating,
       True
     ),
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
       customFloating $ nspRect 0.97,
-      False
+      True
     ),
     ( "NSP_tmuxa-2",
       "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\"",
@@ -382,6 +383,13 @@ openNSP = namedScratchpadAction nsps
 
 openNSPOnScreen :: String -> ScreenId -> X ()
 openNSPOnScreen name scn = doOnScreen scn $ namedScratchpadAction nsps name
+
+hideNSP :: String -> X ()
+hideNSP nsp = do
+  let (_, _, q, _, _) = head $ filter (\(n, _, _, _, _) -> n == nsp) nspDefs
+  win <- GNP.getNextMatch q GNP.Forward
+  when (isJust win) $ do
+    windows $ W.shiftWin "NSP" $ fromJust win
 
 hideAllNSPs :: X ()
 hideAllNSPs =
@@ -474,8 +482,16 @@ getKeybindings conf =
          -- NSPs:
          ((winMask, xK_minus), toggleOrView "NSP"),
          ((altMask, xK_grave), hideAllNSPs),
-         ((altMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-1" 0),
-         ((altMask + controlMask, xK_Escape), openNSPOnScreen "NSP_tmuxa-2" 0),
+         ( (altMask, xK_Escape),
+           do
+             hideNSP "NSP_tmuxa-2"
+             openNSPOnScreen "NSP_tmuxa-1" 0
+         ),
+         ( (altMask + controlMask, xK_Escape),
+           do
+             hideNSP "NSP_tmuxa-1"
+             openNSPOnScreen "NSP_tmuxa-2" 0
+         ),
          ((altMask, xK_q), openNSPOnScreen "NSP_assistant" 0),
          ((altMask, xK_o), openNSPOnScreen "NSP_browse" 0),
          ((altMask, xK_y), openNSPOnScreen "NSP_vikunja" 0),
