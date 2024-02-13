@@ -154,7 +154,7 @@ myManageHook =
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
-      className =? "Google-chrome-unstable" --> doShift "2_1"
+      className =? "tmux-pane-view" --> doShift "1_1"
     ]
 
 ------------------------------------------------------------------------
