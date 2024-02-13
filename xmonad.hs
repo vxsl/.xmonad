@@ -578,7 +578,20 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- scripts
          ((altMask + shiftMask, xK_Delete), spawn "vpnctrl --up"),
-         ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down")
+         ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down"),
+         ---------------------------------------------------------------
+         -- ephemeral
+         ( (altMask, xK_1),
+           do
+             killAllWindowsByClass $ className =? "Chromium-browser"
+             spawn "run-on-tmux-pane-view \"yarn start | tee main.log\""
+             windows $ focusScreen 0
+         ),
+         ( (altMask, xK_2),
+           do
+             killAllWindowsByClass $ className =? "Chromium-browser"
+             spawn "run-on-tmux-pane-view"
+         )
        ]
 
 ------------------------------------------------------------------------
