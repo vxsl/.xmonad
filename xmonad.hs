@@ -436,7 +436,7 @@ getKeybindings conf =
           "tmux-pane-view",
           do
             windows $ focusScreen 1
-            spawn "tmux-pane-view --open-view",
+            spawn "tmux-pane-view",
           Nothing
         ),
         ( xK_i,
