@@ -453,6 +453,11 @@ getKeybindings conf =
           "(remote-debug-profile)",
           mempty,
           Nothing
+        ),
+        ( xK_f,
+          "discord",
+          spawn "discord",
+          Nothing
         )
       ]
     ++ [
