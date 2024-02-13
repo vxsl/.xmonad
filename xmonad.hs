@@ -154,6 +154,7 @@ myManageHook =
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
+      className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1"
     ]
 
@@ -450,7 +451,7 @@ getKeybindings conf =
           Just $ defaultWinBindsParams {useClassName = True}
         ),
         ( xK_period,
-          "(remote-debug-profile)",
+          "chromium-browser",
           mempty,
           Nothing
         ),
