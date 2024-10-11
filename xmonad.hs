@@ -306,9 +306,10 @@ nspDefs :: [NSPDef]
 nspDefs =
   [ ( "NSP_assistant",
       "firefox -P clone1 --class NSP_assistant --new-window \
-      \-new-tab -url https://chat.openai.com/ \
-      \-new-tab -url https://chat.openai.com/ \
-      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://gemini.google.com/app \
+      \-new-tab -url https://gemini.google.com/app \
+      \-new-tab -url https://gemini.google.com/app \
+      \-new-tab -url https://gemini.google.com/app \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
@@ -321,7 +322,7 @@ nspDefs =
       "firefox -P clone3 --class NSP_browse",
       className =? "NSP_browse",
       nonFloating,
-      True
+      False
     ),
     ( "NSP_vikunja",
       "firefox --kiosk -P clone5 --class NSP_vikunja --new-window \
@@ -334,7 +335,7 @@ nspDefs =
       "obsidian",
       className =? "obsidian",
       customFloating $ nspRect 0.95,
-      False
+      True
     ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
@@ -366,6 +367,19 @@ nspDefs =
       className =? "NSP_audio",
       customFloating $ nspRect 0.7,
       False
+    ),
+    ( "NSP_project",
+      "google-chrome --new-window",
+      className =? "Google-chrome",
+      nonFloating,
+      False
+    ),
+    ( "NSP_hubstaff",
+      "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
+      className =? "Netsoft-com.netsoft.hubstaff",
+      customFloating $ nspRect 0.3,
+      -- nonFloating,
+      True
     )
   ]
   where
@@ -425,7 +439,7 @@ getKeybindings conf =
     ++ ezWinBinds
       [ ( xK_x,
           "code - insiders",
-          spawn "not-dotfiles code-insiders --disable-gpu -n",
+          spawn "not-dotfiles code-insiders -n",
           Just $ defaultWinBindsParams {exact = True}
         ),
         ( xK_d,
