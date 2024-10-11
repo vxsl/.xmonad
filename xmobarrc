@@ -2,13 +2,13 @@ Config
   { font = "Liberation Mono 13",
     commands =
       [ 
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-query.sh" [] "waka-query" 1000,
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week"] "waka-week" 1000,
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["week-langs"] "waka-week-langs" 1000,
-        Run Com "/home/kyle/.xmonad/wakawidget/ww-print.sh" ["today"] "waka-today" 1000,
         Run Com "/home/kyle/bin/aw-total-time" [] "aw-total-time" 1000,
+        Run Com "/home/kyle/bin/nftch" ["Kernel"] "kernel" 999999,
+        Run Com "/home/kyle/bin/nftch" ["OS"] "os" 999999,
+        Run Com "/home/kyle/bin/nftch" ["Uptime"] "uptime" 600,
+        Run Com "/home/kyle/bin/nftch" ["host"] "host" 999999,
         Run StdinReader
       ],
     sepChar = "%",
-    template = "%StdinReader%}{%aw-total-time%      | %waka-query%%waka-week% | %waka-week-langs% | %waka-today%       <fc=#00ff1e>%uname%</fc> | %date%"
+    template = "%StdinReader%}{<fc=#00eeff>%host%</fc> | <fc=#00eeff>%kernel%</fc> | <fc=#00eeff>%os%</fc> | <fc=#00eeff>%uptime%</fc> | <fc=#22f229>%aw-total-time%</fc> | %date%"
   }
