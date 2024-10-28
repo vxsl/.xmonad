@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-deprecations #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
@@ -357,7 +358,7 @@ nspDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
-      customFloating $ nspRect 0.5,
+      customFloating $ nspRect 0.8,
       True
     ),
     ( "NSP_browse",
@@ -378,13 +379,6 @@ nspDefs =
       "discord",
       className =? "discord",
       nonFloating,
-      False
-    ),
-    ( "NSP_vikunja",
-      "firefox --kiosk -P clone5 --class NSP_vikunja --new-window \
-      \-new-tab -url http://web.vikunja.internal/",
-      className =? "NSP_vikunja",
-      customFloating $ nspRect 0.5,
       False
     ),
     ( "NSP_obsidian",
@@ -408,13 +402,13 @@ nspDefs =
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
-      customFloating $ nspRect 0.97,
+      customFloating $ nspRect 1,
       False
     ),
     ( "NSP_tmuxa-2",
       "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.yml",
       className =? "NSP_tmuxa-2",
-      customFloating $ nspRect 0.97,
+      customFloating $ nspRect 1,
       False
     ),
     ( "NSP_tmuxa-3",
@@ -442,10 +436,11 @@ nspDefs =
       "google-chrome --new-window",
       -- className =? "Code-insiders-url-handler",
       -- className =? "Chromium-browser",
-      className =? "Google-chrome",
+      -- className =? "Google-chrome",
       -- className =? "partmin-ui",
+      className =? "Google-chrome-unstable",
       nonFloating,
-      False
+      True
     ),
     ( "NSP_hubstaff",
       "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
@@ -523,7 +518,7 @@ getKeybindings conf =
         ( xK_e,
           "tmux-pane-view",
           do
-            windows $ focusScreen 1
+            windows $ focusScreen 0
             spawn "tmux-pane-view",
           Nothing
         ),
@@ -678,10 +673,12 @@ getKeybindings conf =
          ),
          ---------------------------------------------------------------
          -- system
+         ((winMask , xK_m), sendMessage ToggleStruts),
          ((winMask + altMask, xK_q), confirmCmd "remonad --restart"),
          ((altMask + controlMask + shiftMask, xK_F10), spawn "xlock -mode random"),
          ((altMask + controlMask + shiftMask, xK_F11), spawn "toggle-kp --off; systemctl suspend"),
          ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
+         ((winMask + altMask + controlMask + shiftMask, xK_F12), confirmCmd "shutdown now"),
          ((winMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
          ((winMask + shiftMask + controlMask, xK_q), confirmCmd "configure-multihead"),
          ((altMask + controlMask + shiftMask, xK_q), confirm "rescreen" rescreen),
@@ -712,7 +709,7 @@ getConf xmproc =
     { terminal = "alacritty",
       focusFollowsMouse = True,
       clickJustFocuses = False,
-      borderWidth = 1,
+      borderWidth = 0,
       modMask = winMask,
       startupHook = myStartupHook,
       workspaces = myWorkspaces ++ ["NSP"],
