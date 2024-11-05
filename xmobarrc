@@ -2,6 +2,8 @@ Config
   { font = "Liberation Mono 13",
     commands =
       [ 
+        -- Run Com "cat" ["/home/kyle/bin/personal/kp-status"] "kp-status" 1000,
+        Run PipeReader "/home/kyle/bin/personal/kp-status" "kp-status",
         Run Com "/home/kyle/bin/aw-total-time" [] "aw-total-time" 1000,
         Run Com "/home/kyle/bin/nftch" ["Kernel"] "kernel" 999999,
         Run Com "/home/kyle/bin/nftch" ["OS"] "os" 999999,
@@ -10,5 +12,5 @@ Config
         Run StdinReader
       ],
     sepChar = "%",
-    template = "%StdinReader%}{<fc=#00eeff>%host%</fc> | <fc=#00eeff>%kernel%</fc> | <fc=#00eeff>%os%</fc> | <fc=#00eeff>%uptime%</fc> | <fc=#22f229>%aw-total-time%</fc> | %date%"
+    template = "%StdinReader%}{<fc=#ff195e>%kp-status%</fc>              <fc=#00eeff>%host%</fc> | <fc=#00eeff>%kernel%</fc> | <fc=#00eeff>%os%</fc> | <fc=#00eeff>%uptime%</fc> | <fc=#22f229>%aw-total-time%</fc> | %date%"
   }

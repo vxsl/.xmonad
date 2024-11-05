@@ -17,10 +17,13 @@ import XMonad.Actions.SinkAll
 import XMonad.Actions.WindowBringer
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.EwmhDesktops
+import XMonad.Hooks.FadeInactive
+import XMonad.Hooks.FadeInactive (fadeInactiveLogHook, isUnfocused)
 import XMonad.Hooks.ManageDocks
 import XMonad.Hooks.RefocusLast
 import XMonad.Layout.Grid
 import XMonad.Layout.IndependentScreens
+import XMonad.Layout.IndependentScreens (onCurrentScreen)
 import XMonad.Layout.PerScreen (ifWider)
 import XMonad.Layout.ShowWName
 import XMonad.Layout.ThreeColumns
@@ -29,7 +32,7 @@ import XMonad.Prompt.ConfirmPrompt
 import XMonad.Prompt.Window
 import XMonad.StackSet qualified as W
 import XMonad.Util.EZConfig (additionalKeys)
-import XMonad.Util.NamedScratchpad
+import XMonad.Util.NamedScratchpadPatched
 import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
 import XMonad.Util.WorkspaceCompare
@@ -41,7 +44,7 @@ altMask = mod1Mask
 ------------------------------------------------------------------------
 -- workspaces:
 numScreens :: ScreenId
-numScreens = 3
+numScreens = 1
 
 numWorkspacesPerScreen :: Int
 numWorkspacesPerScreen = 9
@@ -203,6 +206,33 @@ seeWin SeeWinParams {queryStr, notFoundAction, greedy, searchBackwards, exact, u
     do extraAction
 
 ------------------------------------------------------------------------
+-- nspBinds: function to get the keybindings for cycling through windows via seeWin
+data NspBindsParams = NspBindsParams
+  { keySym :: KeySym,
+    nspName :: String
+  }
+
+type AbbreviatedNspBindsParams = (KeySym, String)
+
+nspBinds :: NspBindsParams -> [((KeyMask, KeySym), X ())]
+nspBinds NspBindsParams {keySym, nspName} =
+  [ ((altMask, keySym), openNSPOnScreen nspName 0),
+    ( (altMask + shiftMask, keySym),
+      do
+        hideNSP nspName
+        openNSPOnScreen nspName 0
+        -- resetFocusedNSP
+    )
+  ]
+
+ezNspBinds :: [AbbreviatedNspBindsParams] -> [((KeyMask, KeySym), X ())]
+ezNspBinds =
+  concatMap
+    ( \(keySym, nspName) -> do
+        nspBinds $ NspBindsParams {keySym, nspName}
+    )
+
+------------------------------------------------------------------------
 -- winBinds: function to get the keybindings for cycling through windows via seeWin
 data WinBindsParams = WinBindsParams
   { keySym :: KeySym,
@@ -256,15 +286,25 @@ winBindsIDE keycodes =
         name = "customvsc_" ++ show i
         dir = "$(sed -n " ++ show i ++ "p $HOME/.xmonad/code_workspaces | sed 's/ .*//')"
 
-winBindsTmuxaStableView :: b -> String -> [((KeyMask, b), X ())]
-winBindsTmuxaStableView keySym name =
+winBindsTmuxaStableView :: b -> Int -> [((KeyMask, b), X ())]
+winBindsTmuxaStableView keySym num =
   [ ((altMask, keySym), seeWin params),
     ((altMask + shiftMask, keySym), seeWin params {greedy = True})
   ]
   where
-    notFoundAction = spawn $ "unique-term " ++ name ++ " \"tmuxa " ++ name ++ "\""
+    name = "tmuxa-" ++ show num
+    notFoundAction =
+      spawn $
+        "unique-term "
+          ++ name
+          ++ " \"tmuxa "
+          ++ name
+          ++ " $HOME\""
+          ++ if num >= 2
+            then " $HOME/.config/alacritty/alacritty" ++ show num ++ ".yml"
+            else ""
     params :: SeeWinParams
-    params = defaultSeeWinParams {queryStr = name, notFoundAction = notFoundAction}
+    params = defaultSeeWinParams {queryStr = name, notFoundAction = notFoundAction, exact = True}
 
 type AbbreviatedWinBindsParams = (KeySym, String, X (), Maybe WinBindsParams)
 
@@ -321,6 +361,14 @@ nspDefs =
     ( "NSP_browse",
       "firefox -P clone3 --class NSP_browse",
       className =? "NSP_browse",
+      -- "chromium-browser",
+      -- className =? "Chromium-browser",
+      nonFloating,
+      False
+    ),
+    ( "NSP_discord",
+      "discord",
+      className =? "discord",
       nonFloating,
       False
     ),
@@ -335,7 +383,7 @@ nspDefs =
       "obsidian",
       className =? "obsidian",
       customFloating $ nspRect 0.95,
-      True
+      False
     ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
@@ -352,10 +400,10 @@ nspDefs =
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
       customFloating $ nspRect 0.97,
-      True
+      False
     ),
     ( "NSP_tmuxa-2",
-      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\"",
+      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.yml",
       className =? "NSP_tmuxa-2",
       customFloating $ nspRect 0.97,
       False
@@ -369,8 +417,12 @@ nspDefs =
       False
     ),
     ( "NSP_project",
+      -- mempty,
       "google-chrome --new-window",
+      -- className =? "Code-insiders-url-handler",
+      -- className =? "Chromium-browser",
       className =? "Google-chrome",
+      -- className =? "partmin-ui",
       nonFloating,
       False
     ),
@@ -433,8 +485,8 @@ getKeybindings conf =
        ]
     ---------------------------------------------------------------
     -- winBinds:
-    ++ winBindsTmuxaStableView xK_semicolon "tmuxa-1"
-    ++ winBindsTmuxaStableView xK_comma "tmuxa-2"
+    ++ winBindsTmuxaStableView xK_semicolon 1
+    ++ winBindsTmuxaStableView xK_comma 2
     ++ winBindsIDE [xK_b, xK_s]
     ++ ezWinBinds
       [ ( xK_x,
@@ -454,32 +506,44 @@ getKeybindings conf =
             spawn "tmux-pane-view",
           Nothing
         ),
-        ( xK_i,
-          "Scrivano",
-          spawn "scrivano",
-          Just $ defaultWinBindsParams {exact = True, extraAction = spawn "$HOME/bin/personal/confwacom"}
-        ),
+        -- ( xK_i,
+        --   "Scrivano",
+        --   spawn "scrivano",
+        --   Just $ defaultWinBindsParams {exact = True, extraAction = spawn "$HOME/bin/personal/confwacom"}
+        -- ),
         ( xK_p,
           "firefox",
           spawn "firefox --new-window",
           Just $ defaultWinBindsParams {useClassName = True}
-        ),
-        ( xK_period,
-          "chromium-browser",
-          mempty,
-          Nothing
-        ),
-        ( xK_f,
-          "discord",
-          spawn "discord",
-          Nothing
         )
+        -- ( xK_period,
+        --   -- "partmin-ui",
+        --   -- mempty,
+        --   "netsoft-com.netsoft.hubstaff",
+        --   spawn "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
+        --   Nothing
+        -- ),
       ]
+    ---------------------------------------------------------------
+    -- NSPs:
+    ++ ezNspBinds
+      [ (xK_u, "NSP_obsidian"),
+        -- (xK_o, "NSP_browse"),
+        (xK_o, "NSP_project"),
+        (xK_q, "NSP_assistant"),
+        (xK_t, "NSP_homelab"),
+        (xK_w, "NSP_audio"),
+        (xK_period, "NSP_hubstaff"),
+        (xK_f, "NSP_discord")
+      ]
+    ---------------------------------------------------------------
+    --
     ++ [
          ---------------------------------------------------------------
          -- window management:
-         ((altMask, xK_h), toggleFocus),
-         ((altMask + shiftMask, xK_h), swapWithLast),
+         --  ((altMask, xK_h), toggleFocus),
+         --  ((altMask + shiftMask, xK_h), swapWithLast),
+         ((altMask + shiftMask + controlMask, xK_h), mempty),
          ((winMask, xK_Escape), kill),
          ((altMask, xK_Tab), windows W.focusDown),
          ((winMask, xK_j), windows W.focusDown),
@@ -504,20 +568,18 @@ getKeybindings conf =
          ((altMask, xK_grave), hideAllNSPs),
          ( (altMask, xK_Escape),
            do
-             hideNSP "NSP_tmuxa-2"
-             openNSPOnScreen "NSP_tmuxa-1" 0
+             ws <- gets windowset
+             tmuxa2 <- GNP.getNextMatch (winQuery False False "NSP_tmuxa-2") GNP.Forward
+             let focused = W.focus <$> W.stack (W.workspace (W.current ws))
+             if focused == tmuxa2
+               then hideNSP "NSP_tmuxa-2"
+               else openNSPOnScreen "NSP_tmuxa-1" 0
          ),
          ( (altMask + controlMask, xK_Escape),
            do
              hideNSP "NSP_tmuxa-1"
              openNSPOnScreen "NSP_tmuxa-2" 0
          ),
-         ((altMask, xK_q), openNSPOnScreen "NSP_assistant" 0),
-         ((altMask, xK_o), openNSPOnScreen "NSP_browse" 0),
-         ((altMask, xK_y), openNSPOnScreen "NSP_vikunja" 0),
-         ((altMask, xK_u), openNSPOnScreen "NSP_obsidian" 0),
-         ((altMask, xK_t), openNSP "NSP_homelab"),
-         ((altMask, xK_w), openNSPOnScreen "NSP_audio" 0),
          ------------------------------------------------------------
          -- volume:
          ---------- up/down
@@ -584,7 +646,7 @@ getKeybindings conf =
          -- system
          ((winMask + altMask, xK_q), confirmCmd "remonad --restart"),
          ((altMask + controlMask + shiftMask, xK_F10), spawn "xlock -mode random"),
-         ((altMask + controlMask + shiftMask, xK_F11), spawn "systemctl suspend"),
+         ((altMask + controlMask + shiftMask, xK_F11), spawn "toggle-kp --off; systemctl suspend"),
          ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
          ((winMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
          ((winMask + shiftMask + controlMask, xK_q), confirmCmd "configure-multihead"),
@@ -593,6 +655,7 @@ getKeybindings conf =
          -- scripts
          ((altMask + shiftMask, xK_Delete), spawn "vpnctrl --up"),
          ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down"),
+         ((altMask, xK_slash), spawn "toggle-kp"),
          ---------------------------------------------------------------
          -- ephemeral
          ( (altMask, xK_1),
@@ -618,7 +681,7 @@ getConf xmproc =
       borderWidth = 1,
       modMask = winMask,
       startupHook = myStartupHook,
-      workspaces = myWorkspaces,
+      workspaces = myWorkspaces ++ ["NSP"],
       normalBorderColor = "#000000",
       focusedBorderColor = "#ffffff",
       mouseBindings = myMouseBindings,
@@ -637,6 +700,7 @@ getConf xmproc =
       handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
       logHook =
         refocusLastLogHook
+          >> fadeOutLogHook (fadeIf ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp")) 0.2)
           >> nsHideOnFocusLoss
             (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
             <+> dynamicLogWithPP
@@ -658,5 +722,6 @@ getConf xmproc =
 -- main:
 main = do
   xmproc <- spawnPipe "/usr/bin/xmobar -x 2 $HOME/.xmonad/xmobarrc"
+  spawn "get-kp-status"
   let conf = getConf xmproc
   xmonad $ ewmh $ docks $ conf `additionalKeys` getKeybindings conf
