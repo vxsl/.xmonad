@@ -346,14 +346,16 @@ nspDefs :: [NSPDef]
 nspDefs =
   [ ( "NSP_assistant",
       "firefox -P clone1 --class NSP_assistant --new-window \
-      \-new-tab -url https://gemini.google.com/app \
-      \-new-tab -url https://gemini.google.com/app \
-      \-new-tab -url https://gemini.google.com/app \
-      \-new-tab -url https://gemini.google.com/app \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
-      \-new-tab -url https://chat.openai.com/?model=gpt-4",
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/ \
+      \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
       customFloating $ nspRect 0.5,
       True
@@ -363,6 +365,12 @@ nspDefs =
       className =? "NSP_browse",
       -- "chromium-browser",
       -- className =? "Chromium-browser",
+      nonFloating,
+      False
+    ),
+    ( "NSP_files",
+      "nautilus",
+      className =? "org.gnome.Nautilus",
       nonFloating,
       False
     ),
@@ -387,12 +395,13 @@ nspDefs =
     ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
-      \-new-tab -url http://web.pve.internal/ \
-      \-new-tab -url http://pi.hole/ \
-      \-new-tab -url http://web.homebridge.internal/ \
-      \-new-tab -url http://localhost:5600/#/activity/$HOSTNAME \
-      \-new-tab -url http://web.nginx.internal",
-      className =? "NSP_homelab",
+      \-new-tab -url http://pve.local:8006/ \
+      \-new-tab -url https://10.0.0.3:9443/ \
+      \-new-tab -url http://npm-gui.kylegrimsrudma.nz/ \
+      \-new-tab -url http://umami.kylegrimsrudma.nz/ \
+      \-new-tab -url https://dash.cloudflare.com/05ec19eeeec296ddd6cfd2bda7df1384/kylegrimsrudma.nz/dns/records",
+      className
+        =? "NSP_homelab",
       nonFloating,
       True
     ),
@@ -408,11 +417,23 @@ nspDefs =
       customFloating $ nspRect 0.97,
       False
     ),
+    ( "NSP_tmuxa-3",
+      "unique-term NSP_tmuxa-3 \"zsh\" " ++ " /home/kyle/.config/alacritty/alacritty3.yml",
+      className =? "NSP_tmuxa-3",
+      customFloating $ nspRect 0.4,
+      False
+    ),
     ( "NSP_audio",
       "firefox -P clone2 --class NSP_audio --new-window \
       \-new-tab -url https://open.spotify.com/ \
       \-new-tab -url https://noises.online/",
       className =? "NSP_audio",
+      customFloating $ nspRect 0.7,
+      False
+    ),
+    ( "NSP_spotify",
+      "spotify",
+      className =? "Spotify",
       customFloating $ nspRect 0.7,
       False
     ),
@@ -527,8 +548,10 @@ getKeybindings conf =
     ---------------------------------------------------------------
     -- NSPs:
     ++ ezNspBinds
-      [ (xK_u, "NSP_obsidian"),
-        -- (xK_o, "NSP_browse"),
+      [ -- (xK_i, "NSP_tmuxa-3"),
+        (xK_u, "NSP_obsidian"),
+        (xK_e, "NSP_spotify"),
+        (xK_r, "NSP_files"),
         (xK_o, "NSP_project"),
         (xK_q, "NSP_assistant"),
         (xK_t, "NSP_homelab"),
@@ -620,6 +643,17 @@ getKeybindings conf =
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
+         ( (altMask, xK_z),
+           seeWin
+             SeeWinParams
+               { queryStr = "zoom",
+                 notFoundAction = mempty,
+                 greedy = False,
+                 searchBackwards = False,
+                 exact = True,
+                 useClassName = True
+               }
+         ),
          ( (winMask + shiftMask, xK_e),
            seeWin
              SeeWinParams
