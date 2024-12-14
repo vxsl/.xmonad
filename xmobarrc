@@ -9,8 +9,10 @@ Config
         Run Com "/home/kyle/bin/nftch" ["OS"] "os" 999999,
         Run Com "/home/kyle/bin/nftch" ["Uptime"] "uptime" 600,
         Run Com "/home/kyle/bin/nftch" ["host"] "host" 999999,
+        Run Com "bash" ["-c", "/home/kyle/bin/personal/batt_level || :"] "batt" 1000,
+        Run Com "bash" ["-c", "/home/kyle/bin/personal/batt_status || :"] "battstat" 1000,
         Run StdinReader
       ],
     sepChar = "%",
-    template = "%StdinReader%}{<fc=#ff195e>%kp-status%</fc>              <fc=#00eeff>%host%</fc> | <fc=#00eeff>%kernel%</fc> | <fc=#00eeff>%os%</fc> | <fc=#00eeff>%uptime%</fc> | <fc=#22f229>%aw-total-time%</fc> | %date%"
+    template = "%StdinReader%}{<fc=#ff195e>%kp-status%</fc>              <fc=#00eeff>%host%</fc> | <fc=#00eeff>%kernel%</fc> | <fc=#00eeff>%os%</fc> | %batt% %battstat%  | <fc=#00eeff>%uptime%</fc> | <fc=#22f229>%aw-total-time%</fc> | %date%"
   }
