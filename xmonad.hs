@@ -160,7 +160,8 @@ myManageHook =
       title =? "Picture-in-Picture" --> doFloat,
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
       className =? "Chromium-browser" --> doShift "2_1",
-      className =? "tmux-pane-view" --> doShift "1_1"
+      className =? "tmux-pane-view" --> doShift "1_1",
+      className =? "Google-chrome" --> doShift "project"
     ]
 
 ------------------------------------------------------------------------
@@ -432,17 +433,17 @@ nspDefs =
       customFloating $ nspRect 0.7,
       False
     ),
-    ( "NSP_project",
-      -- mempty,
-      "google-chrome --new-window",
-      -- className =? "Code-insiders-url-handler",
-      -- className =? "Chromium-browser",
-      -- className =? "Google-chrome",
-      -- className =? "partmin-ui",
-      className =? "Google-chrome",
-      nonFloating,
-      True
-    ),
+    -- ( "NSP_project",
+    --   -- mempty,
+    --   "google-chrome --new-window",
+    --   -- className =? "Code-insiders-url-handler",
+    --   -- className =? "Chromium-browser",
+    --   -- className =? "Google-chrome",
+    --   -- className =? "partmin-ui",
+    --   className =? "Google-chrome",
+    --   nonFloating,
+    --   True
+    -- ),
     ( "NSP_hubstaff",
       "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
       className =? "Netsoft-com.netsoft.hubstaff",
@@ -505,6 +506,18 @@ getKeybindings conf =
     ++ winBindsTmuxaStableView xK_semicolon 1
     ++ winBindsTmuxaStableView xK_comma 2
     ++ winBindsIDE [xK_b, xK_s]
+    ++ [
+      ((altMask, xK_o), toggleOrView "project"),
+      ((altMask+shiftMask, xK_o), do
+        -- windows $  W.view "project"
+        seeWin defaultSeeWinParams 
+          { queryStr = "Google-chrome",
+            notFoundAction = spawn "google-chrome --new-window",
+            exact = True,
+            useClassName = True,
+            extraAction = mempty
+          })
+    ]
     ++ ezWinBinds
       [ ( xK_x,
           "code",
@@ -548,7 +561,6 @@ getKeybindings conf =
         (xK_u, "NSP_obsidian"),
         (xK_e, "NSP_spotify"),
         (xK_r, "NSP_files"),
-        (xK_o, "NSP_project"),
         (xK_q, "NSP_assistant"),
         (xK_t, "NSP_homelab"),
         (xK_w, "NSP_audio"),
@@ -713,7 +725,7 @@ getConf xmproc =
       borderWidth = 0,
       modMask = winMask,
       startupHook = myStartupHook,
-      workspaces = myWorkspaces ++ ["NSP"],
+      workspaces = myWorkspaces ++ ["NSP", "project"],
       normalBorderColor = "#000000",
       focusedBorderColor = "#ffffff",
       mouseBindings = myMouseBindings,
