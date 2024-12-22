@@ -282,7 +282,7 @@ winBindsIDE keycodes =
             queryStr = name,
             notFoundAction =
               spawn $
-                "not-dotfiles spawn-with-name " ++ name ++ " Code \"code-insiders --disable-gpu -n " ++ dir ++ "\" 2"
+                "not-dotfiles spawn-with-name " ++ name ++ " Code \"code --disable-gpu -n " ++ dir ++ "\" 2"
           }
       where
         name = "customvsc_" ++ show i
@@ -507,13 +507,13 @@ getKeybindings conf =
     ++ winBindsIDE [xK_b, xK_s]
     ++ ezWinBinds
       [ ( xK_x,
-          "code - insiders",
-          spawn "not-dotfiles code-insiders -n",
+          "code",
+          spawn "not-dotfiles code -n",
           Just $ defaultWinBindsParams {exact = True}
         ),
         ( xK_d,
           "customvsc_dof",
-          spawn "dotfiles spawn-with-name customvsc_dof Code \"code-insiders --disable-gpu -n $HOME\" 2",
+          spawn "dotfiles spawn-with-name customvsc_dof Code \"code --disable-gpu -n $HOME\" 2",
           Nothing
         ),
         ( xK_e,
