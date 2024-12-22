@@ -519,7 +519,13 @@ getKeybindings conf =
           })
     ]
     ++ ezWinBinds
-      [ ( xK_x,
+      [ 
+        ( xK_z,
+          "zoom",
+          spawn "zoom",
+          Just $ defaultWinBindsParams {exact = True, useClassName = True}
+        ),
+        ( xK_x,
           "code",
           spawn "not-dotfiles code -n",
           Just $ defaultWinBindsParams {exact = True}
@@ -651,17 +657,17 @@ getKeybindings conf =
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
-         ( (altMask, xK_z),
-           seeWin
-             SeeWinParams
-               { queryStr = "zoom",
-                 notFoundAction = mempty,
-                 greedy = False,
-                 searchBackwards = False,
-                 exact = True,
-                 useClassName = True
-               }
-         ),
+        --  ( (altMask, xK_z),
+        --    seeWin
+        --      SeeWinParams
+        --        { queryStr = "zoom",
+        --          notFoundAction = mempty,
+        --          greedy = False,
+        --          searchBackwards = False,
+        --          exact = True,
+        --          useClassName = True
+        --        }
+        --  ),
          ( (winMask + shiftMask, xK_e),
            seeWin
              SeeWinParams
