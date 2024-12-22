@@ -562,7 +562,7 @@ getKeybindings conf =
          -- window management:
          --  ((altMask, xK_h), toggleFocus),
          --  ((altMask + shiftMask, xK_h), swapWithLast),
-         ((altMask + shiftMask + controlMask, xK_h), mempty),
+        --  ((altMask + shiftMask + controlMask, xK_h), mempty),
          ((winMask, xK_Escape), kill),
          ((altMask, xK_Tab), windows W.focusDown),
          ((winMask, xK_j), windows W.focusDown),
