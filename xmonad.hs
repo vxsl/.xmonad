@@ -204,7 +204,7 @@ seeWin SeeWinParams {queryStr, notFoundAction, greedy, searchBackwards, exact, u
       then do
         let w = fromJust win
         if greedy then windows $ bringWindow w else mempty
-        windows $ focusWindow' w
+        windows $ W.focusWindow w
       else notFoundAction
     do extraAction
 
