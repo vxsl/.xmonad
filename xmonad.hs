@@ -386,7 +386,7 @@ nspDefs =
       "obsidian",
       className =? "obsidian",
       customFloating $ nspRect 0.95,
-      False
+      True
     ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
@@ -439,7 +439,7 @@ nspDefs =
       -- className =? "Chromium-browser",
       -- className =? "Google-chrome",
       -- className =? "partmin-ui",
-      className =? "Google-chrome-unstable",
+      className =? "Google-chrome",
       nonFloating,
       True
     ),
