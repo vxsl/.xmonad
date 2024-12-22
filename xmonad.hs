@@ -403,17 +403,17 @@ nspDefs =
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
-      customFloating $ nspRect 1,
+      customFloating $ nspRect 0.9,
       False
     ),
     ( "NSP_tmuxa-2",
-      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.yml",
+      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.toml",
       className =? "NSP_tmuxa-2",
-      customFloating $ nspRect 1,
+      customFloating $ nspRect 0.9, 
       False
     ),
     ( "NSP_tmuxa-3",
-      "unique-term NSP_tmuxa-3 \"zsh\" " ++ " /home/kyle/.config/alacritty/alacritty3.yml",
+      "unique-term NSP_tmuxa-3 \"zsh\" " ++ " /home/kyle/.config/alacritty/alacritty3.toml",
       className =? "NSP_tmuxa-3",
       customFloating $ nspRect 0.4,
       False
