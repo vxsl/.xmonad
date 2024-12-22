@@ -99,13 +99,13 @@ flashName c (Rectangle sx sy wh ht) wrs = do
   n <- withWindowSet (return . S.currentTag)
   f <- initXMF (swn_font c)
   width <- (\w -> w + w `div` length n) <$> textWidthXMF d f n
-  (as,ds) <- textExtentsXMF f n
+  (as, ds) <- textExtentsXMF f n
   let hight = as + ds
-      y     = fi sy + (fi ht - hight + 2) `div` 2
-      x     = fi sx + (fi wh - width + 2) `div` 2
+      y     = fi sy 
+      x     = fi sx 
   w <- createNewWindow (Rectangle (fi x) (fi y) (fi width) (fi hight)) Nothing "" True
   showWindow w
   paintAndWrite w f (fi width) (fi hight) 0 (swn_bgcolor c) "" (swn_color c) (swn_bgcolor c) [AlignCenter] [n]
   releaseXMF f
   i <- startTimer (swn_fade c)
-  return (wrs, Just $ SWN False c $ Just (i,w))
+  return (wrs, Just $ SWN False c $ Just (i, w))
