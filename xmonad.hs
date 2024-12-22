@@ -26,7 +26,7 @@ import XMonad.Layout.Grid
 import XMonad.Layout.IndependentScreens
 import XMonad.Layout.IndependentScreens (onCurrentScreen)
 import XMonad.Layout.PerScreen (ifWider)
-import XMonad.Layout.ShowWName
+import XMonad.Layout.ShowWNamePatched qualified as SWNP
 import XMonad.Layout.ThreeColumns
 import XMonad.Prompt
 import XMonad.Prompt.ConfirmPrompt
@@ -719,12 +719,12 @@ getConf xmproc =
       mouseBindings = myMouseBindings,
       layoutHook =
         refocusLastLayoutHook
-          $ ( showWName' $
+          $ ( SWNP.showWName' $
                 def
-                  { swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
-                    swn_fade = 0.5,
-                    swn_bgcolor = "blue",
-                    swn_color = "red"
+                  { SWNP.swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
+                    SWNP.swn_fade = 0.5,
+                    SWNP.swn_bgcolor = "blue",
+                    SWNP.swn_color = "red"
                   }
             )
           $ avoidStruts myLayout,
