@@ -131,6 +131,7 @@ myMouseBindings XConfig {XMonad.modMask = modm} =
 -- startup hook:
 myStartupHook :: X ()
 myStartupHook = do
+  sendMessage (SetStruts [] [U,L])
   spawnOnce "nitrogen --restore &"
   mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
   windows $ focusScreen 0
