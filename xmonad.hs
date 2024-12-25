@@ -29,6 +29,7 @@ import XMonad.Layout.PerScreen (ifWider)
 import XMonad.Layout.ShowWNamePatched qualified as SWNP
 import XMonad.Layout.ThreeColumns
 import XMonad.Prompt
+import XMonad.Prompt.Input
 import XMonad.Prompt.ConfirmPrompt
 import XMonad.Prompt.Window
 import XMonad.StackSet qualified as W
@@ -37,6 +38,15 @@ import XMonad.Util.NamedScratchpadPatched
 import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
 import XMonad.Util.WorkspaceCompare
+import XMonad.Hooks.ManageHelpers
+import XMonad.Hooks.OnPropertyChange
+import XMonad.Actions.CopyWindow
+import System.Process (readProcessWithExitCode)
+import XMonad.Util.ExtensibleState as XS
+import XMonad.Layout.Hidden
+import XMonad.Hooks.EwmhDesktops
+import XMonad.Hooks.ManageHelpers
+import XMonad.Hooks.Focus
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -82,6 +92,8 @@ killAllWindowsByClass q = do
     Just w -> killWindow w >> killAllWindowsByClass q
     Nothing -> return ()
 
+toggleOrViewNoSP = toggleOrDoSkip ["NSP"] W.greedyView
+
 ------------------------------------------------------------------------
 -- prompt:
 myPromptConfig :: XPConfig
@@ -107,15 +119,16 @@ confirm = confirmPrompt myPromptConfig
 ------------------------------------------------------------------------
 -- layout:
 myLayout =
-  ifWider
-    2561
-    (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
-    (tiled ||| Mirror tiled ||| Full ||| Grid)
-  where
-    tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
-    nmaster = 1 -- The default number of windows in the master pane
-    ratio = 3 / 5 -- Default proportion of screen occupied by master pane
-    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
+  hiddenWindows $
+    ifWider
+      2561
+      (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
+      (tiled ||| Mirror tiled ||| Full ||| Grid)
+    where
+      tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
+      nmaster = 1 -- The default number of windows in the master pane
+      ratio = 3 / 5 -- Default proportion of screen occupied by master pane
+      delta = 3 / 100 -- Percent of screen to increment by when resizing panes
 
 ------------------------------------------------------------------------
 -- mouse bindings:
@@ -161,8 +174,25 @@ myManageHook =
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
-      className =? "Google-chrome" --> doShift "project"
+      className =? "Google-chrome" --> doShift "project",
+      -- className =? "pnpproj" --> doFloatAt 0.88 0.8 <+> doF copyToAll <+> doF W.focusDown
+      className =? "pnpproj" --> doFloatAt 0.88 0.8,
+      className =? "pnptimer" --> doFloatAt 0 0.8 
+
+      -- className =? "NSP_pnpproj" --> doIgnore
     ]
+
+myHandleEventHook =
+    refocusLastWhen (refocusingIsActive <||> isFloat)
+    -- <+> onXPropertyChange "WM_ROLE" (className =? "pnpproj" --> doIgnore)
+    -- <+> onXPropertyChange "WM_CLASS" (className =? "pnpproj" --> doF (copy "0_1"))
+
+-- myHandleEventHook =
+--     refocusLastWhen (refocusingIsActive <||> isFloat)
+    -- <+> onXPropertyChange "WM_CLASS" (
+    --       --  className =? "pnpproj" --> doF (copy "0_1") <+> doF (W.float "pnpproj" (W.RationalRect 0.7 0.7 0.3 0.3))
+    --        className =? "pnpproj" --> doF (copy "0_1") <+> doFloatAt 0.1 0.1
+    --    )
 
 ------------------------------------------------------------------------
 -- seeWin: a function to get the next occurrence of a window matching a query
@@ -336,6 +366,45 @@ ezWinBinds =
     )
 
 ------------------------------------------------------------------------
+-- tailwind docs
+
+-- Define the state to track the current tab index
+newtype TabIndex = TabIndex Int deriving (Read, Show)
+
+instance ExtensionClass TabIndex where
+  initialValue = TabIndex 0
+
+-- Custom prompt configuration for centering and enlarging the text
+centeredPromptConfig :: XPConfig
+centeredPromptConfig = def
+  { font = "xft:Sans-12" -- Increase font size
+  , position = CenteredAt 0.5 0.5 -- Center the prompt on screen
+  , height = 30 -- Adjust height for better appearance
+  }
+
+searchTailwindInDocs :: X ()
+searchTailwindInDocs = do
+  hideNSP "NSP_docs"
+  openNSPOnScreen "NSP_docs" 0
+  let promptConfig = myPromptConfig
+  inputPrompt promptConfig "tailwind docs" ?+ \query -> do
+    -- Get the current tab index and update it (cycle between 3-9)
+    TabIndex currentIndex <- XS.get
+    let nextIndex = if currentIndex < 1 || currentIndex >= 9 then 1 else (currentIndex + 1)
+    XS.put $ TabIndex nextIndex
+    -- debugLog nextIndex
+    -- Build the xdotool command
+    let cmd = unwords
+          [ "xdotool key ctrl+" ++ show nextIndex
+          , "key ctrl+l key ctrl+a key BackSpace key BackSpace &&  "
+          , "xdotool type \"! \" && "
+          , "xdotool type \" tailwindcss " ++ query ++ "\" && "
+          , "xdotool key KP_Enter"
+          ]
+    -- debugLog cmd
+    spawn cmd
+
+------------------------------------------------------------------------
 -- named scratchpads ("NSPs"):
 type NSPDef =
   ( String, -- scratchpad name
@@ -347,7 +416,8 @@ type NSPDef =
 
 nspDefs :: [NSPDef]
 nspDefs =
-  [ ( "NSP_assistant",
+  [ 
+    ( "NSP_assistant",
       "firefox -P clone1 --class NSP_assistant --new-window \
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/ \
@@ -360,6 +430,36 @@ nspDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
+      customFloating $ nspRect 0.8,
+      True
+    ),
+    -- ( "NSP_docs",
+    --   "firefox -P clone4 --class NSP_docs --new-window \
+    --   \-new-tab -url about:newtab \
+    --   \-new-tab -url about:newtab \
+    --   \-new-tab -url https://tailwindcss.com/ \
+    --   \-new-tab -url https://tailwindcss.com/ \
+    --   \-new-tab -url https://tailwindcss.com/ \
+    --   \-new-tab -url https://tailwindcss.com/ \
+    --   \-new-tab -url https://tailwindcss.com/ \
+    --   \-new-tab -url https://tailwindcss.com/",
+    --   className =? "NSP_docs",
+    --   customFloating $ nspRect 0.8,
+    --   True
+    -- ),
+    ( "NSP_docs",
+      "google-chrome-unstable --class=NSP_docs --new-window \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/ \
+      \--new-tab https://tailwindcss.com/",
+      className =? "NSP_docs",
       customFloating $ nspRect 0.8,
       True
     ),
@@ -419,6 +519,18 @@ nspDefs =
       customFloating $ nspRect 0.4,
       False
     ),
+    ( "NSP_testing",
+      "",
+      className =? "Cypress",
+      customFloating $ nspRect 0.7,
+      False
+    ),
+    ( "NSP_meeting",
+      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
+      className =? "NSP_meeting",
+      customFloating $ nspRect 0.7,
+      False
+    ),
     ( "NSP_audio",
       "firefox -P clone2 --class NSP_audio --new-window \
       \-new-tab -url https://open.spotify.com/ \
@@ -442,6 +554,21 @@ nspDefs =
     --   -- className =? "partmin-ui",
     --   className =? "Google-chrome",
     --   nonFloating,
+    --   True
+    -- -- ),
+    -- ( "NSP_pnpproj",
+    --   -- mempty,
+    --   -- "spawn-with-name NSP_pnpproj Chromium-browser \"chromium-browser --new-window --window-size=200,200\" 5",
+    --   "chromium-browser --class=NSP_pnpproj --new-window --window-size=200,200",
+    --   -- className =? "Code-insiders-url-handler",
+    --   -- className =? "Chromium-browser",
+    --   -- className =? "Google-chrome",
+    --   -- className =? "partmin-ui",
+    --   className =? "NSP_pnpproj",
+    --   -- (customFloating $ W.RationalRect 0.7 0.7 0.3 0.3) <+> doF copyToAll,
+    --   doFloat <+> doF copyToAll,
+    --   -- (copyToAll),
+    --   -- doIgnore,
     --   True
     -- ),
     ( "NSP_hubstaff",
@@ -507,12 +634,12 @@ getKeybindings conf =
     ++ winBindsTmuxaStableView xK_comma 2
     ++ winBindsIDE [xK_b, xK_s]
     ++ [
-      ((altMask, xK_o), toggleOrView "project"),
+      ((altMask, xK_o), toggleOrViewNoSP "project"),
       ((altMask+shiftMask, xK_o), do
         -- windows $  W.view "project"
         seeWin defaultSeeWinParams 
           { queryStr = "Google-chrome",
-            notFoundAction = spawn "google-chrome --new-window",
+            notFoundAction = spawn "google-chrome --new-window --remote-debugging-port=9222 http://localhost:5173",
             exact = True,
             useClassName = True,
             extraAction = mempty
@@ -520,21 +647,21 @@ getKeybindings conf =
     ]
     ++ ezWinBinds
       [ 
-        ( xK_z,
-          "zoom",
-          spawn "zoom",
-          Just $ defaultWinBindsParams {exact = True, useClassName = True}
-        ),
+        -- ( xK_z,
+        --   "zoom",
+        --   spawn "zoom",
+        --   Just $ defaultWinBindsParams {exact = True, useClassName = True}
+        -- ),
         ( xK_x,
           "code",
           spawn "not-dotfiles code -n",
           Just $ defaultWinBindsParams {exact = True}
         ),
-        ( xK_d,
-          "customvsc_dof",
-          spawn "dotfiles spawn-with-name customvsc_dof Code \"code --disable-gpu -n $HOME\" 2",
-          Nothing
-        ),
+        -- ( xK_d,
+        --   "customvsc_dof",
+        --   spawn "dotfiles spawn-with-name customvsc_dof Code \"code --disable-gpu -n $HOME\" 2",
+        --   Nothing
+        -- ),
         ( xK_e,
           "tmux-pane-view",
           do
@@ -563,11 +690,15 @@ getKeybindings conf =
     ---------------------------------------------------------------
     -- NSPs:
     ++ ezNspBinds
-      [ -- (xK_i, "NSP_tmuxa-3"),
+      [ 
+        -- (xK_i, "NSP_pnpproj"),
+        (xK_z, "NSP_meeting"),
         (xK_u, "NSP_obsidian"),
         (xK_e, "NSP_spotify"),
         (xK_r, "NSP_files"),
-        (xK_q, "NSP_assistant"),
+        (xK_d, "NSP_testing"),
+        (xK_q, "NSP_docs"),
+        -- (xK_a, "NSP_assistant"),
         (xK_t, "NSP_homelab"),
         (xK_w, "NSP_audio"),
         (xK_period, "NSP_hubstaff"),
@@ -605,7 +736,7 @@ getKeybindings conf =
          ((altMask, xK_grave), hideAllNSPs),
          ( (altMask, xK_Escape),
            do
-             ws <- gets windowset
+             ws <- XMonad.gets windowset
              tmuxa2 <- GNP.getNextMatch (winQuery False False "NSP_tmuxa-2") GNP.Forward
              let focused = W.focus <$> W.stack (W.workspace (W.current ws))
              if focused == tmuxa2
@@ -654,7 +785,46 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
+         ((altMask, xK_i), do 
+            win <- GNP.getNextMatch (className =? "pnpproj") GNP.Forward
+            debugLog win
+            if (isJust win) 
+              then do
+              focus $ fromJust win
+              withFocused hideWindow
+              -- GNP.nextMatch GNP.History (not <$> (className =? "pnpproj"))
+            else do
+              popped <- popOldestHiddenWindow
+              windows $ W.focusDown
+              -- spawn "change-window-prop"
+              -- debugLog $ show popped
+          ),
+         ((altMask+shiftMask, xK_i), do
+            spawn "chromium-browser --class=pnpproj --new-window --window-size=500,300 --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222 "
+            -- windows $ W.focusDown
+          ),
+
+         ((altMask, xK_9), do 
+            win <- GNP.getNextMatch (className =? "pnptimer") GNP.Forward
+            debugLog win
+            if (isJust win) 
+              then do
+              focus $ fromJust win
+              withFocused hideWindow
+              -- GNP.nextMatch GNP.History (not <$> (className =? "pnpproj"))
+            else do
+              popped <- popOldestHiddenWindow
+              windows $ W.focusDown
+              -- spawn "change-window-prop"
+              -- debugLog $ show popped
+          ),
+         ((altMask+shiftMask, xK_9), do
+            spawn "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone1 --class=pnptimer --new-window --window-size=100,100 --app='http://localhost:3001' --start-fullscreen"
+            -- windows $ W.focusDown
+          ),
+         ((altMask, xK_a), searchTailwindInDocs),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
+         ((winMask, xK_i), spawn "spawn-with-name pnpproj Google-chrome \"google-chrome --new-window\" 2"),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
         --  ( (altMask, xK_z),
@@ -726,7 +896,7 @@ getKeybindings conf =
 getConf xmproc =
   def
     { terminal = "alacritty",
-      focusFollowsMouse = True,
+      focusFollowsMouse = False,
       clickJustFocuses = False,
       borderWidth = 0,
       modMask = winMask,
@@ -739,7 +909,7 @@ getConf xmproc =
         refocusLastLayoutHook
           $ ( SWNP.showWName' $
                 def
-                  { SWNP.swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
+                  { SWNP.swn_font = "xft:Monospace:pixelsize=20:regular:hinting=true",
                     SWNP.swn_fade = 0.5,
                     SWNP.swn_bgcolor = "blue",
                     SWNP.swn_color = "red"
@@ -747,7 +917,10 @@ getConf xmproc =
             )
           $ avoidStruts myLayout,
       manageHook = namedScratchpadManageHook nsps <+> myManageHook <+> manageSpawn,
-      handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
+      handleEventHook = myHandleEventHook,
+      -- refocusLastWhen $ refocusingIsActive <||> isFloat 
+      --   onXPropertyChange "WM_NAME" (title =? "Spotify" --> doShift "5")
+      -- ,
       logHook =
         refocusLastLogHook
           >> fadeOutLogHook (fadeIf ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp")) 0.2)
