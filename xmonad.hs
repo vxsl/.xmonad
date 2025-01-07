@@ -469,6 +469,12 @@ nspDefs =
       customFloating $ nspRect 0.4,
       False
     ),
+    ( "NSP_testing",
+      "",
+      className =? "Cypress",
+      customFloating $ nspRect 0.7,
+      False
+    ),
     ( "NSP_meeting",
       "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
       className =? "NSP_meeting",
@@ -581,11 +587,6 @@ getKeybindings conf =
           spawn "not-dotfiles code -n",
           Just $ defaultWinBindsParams {exact = True}
         ),
-        ( xK_d,
-          "customvsc_dof",
-          spawn "dotfiles spawn-with-name customvsc_dof Code \"code --disable-gpu -n $HOME\" 2",
-          Nothing
-        ),
         ( xK_e,
           "tmux-pane-view",
           do
@@ -619,6 +620,7 @@ getKeybindings conf =
         (xK_u, "NSP_obsidian"),
         (xK_e, "NSP_spotify"),
         (xK_r, "NSP_files"),
+        (xK_d, "NSP_testing"),
         (xK_q, "NSP_assistant"),
         (xK_t, "NSP_homelab"),
         (xK_w, "NSP_audio"),
