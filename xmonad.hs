@@ -773,7 +773,7 @@ getKeybindings conf =
 getConf xmproc =
   def
     { terminal = "alacritty",
-      focusFollowsMouse = True,
+      focusFollowsMouse = False,
       clickJustFocuses = False,
       borderWidth = 0,
       modMask = winMask,
