@@ -469,6 +469,12 @@ nspDefs =
       customFloating $ nspRect 0.4,
       False
     ),
+    ( "NSP_meeting",
+      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
+      className =? "NSP_meeting",
+      customFloating $ nspRect 0.7,
+      False
+    ),
     ( "NSP_audio",
       "firefox -P clone2 --class NSP_audio --new-window \
       \-new-tab -url https://open.spotify.com/ \
@@ -569,12 +575,7 @@ getKeybindings conf =
           })
     ]
     ++ ezWinBinds
-      [ 
-        ( xK_z,
-          "zoom",
-          spawn "zoom",
-          Just $ defaultWinBindsParams {exact = True, useClassName = True}
-        ),
+      [
         ( xK_x,
           "code",
           spawn "not-dotfiles code -n",
@@ -613,7 +614,8 @@ getKeybindings conf =
     ---------------------------------------------------------------
     -- NSPs:
     ++ ezNspBinds
-      [ -- (xK_i, "NSP_tmuxa-3"),
+      [
+        (xK_z, "NSP_meeting"),
         (xK_u, "NSP_obsidian"),
         (xK_e, "NSP_spotify"),
         (xK_r, "NSP_files"),
