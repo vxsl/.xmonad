@@ -811,7 +811,7 @@ getConf xmproc =
         refocusLastLayoutHook
           $ ( SWNP.showWName' $
                 def
-                  { SWNP.swn_font = "xft:Monospace:pixelsize=30:regular:hinting=true",
+                  { SWNP.swn_font = "xft:Monospace:pixelsize=20:regular:hinting=true",
                     SWNP.swn_fade = 0.5,
                     SWNP.swn_bgcolor = "blue",
                     SWNP.swn_color = "red"
