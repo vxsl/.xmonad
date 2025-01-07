@@ -29,6 +29,7 @@ import XMonad.Layout.PerScreen (ifWider)
 import XMonad.Layout.ShowWNamePatched qualified as SWNP
 import XMonad.Layout.ThreeColumns
 import XMonad.Prompt
+import XMonad.Prompt.Input
 import XMonad.Prompt.ConfirmPrompt
 import XMonad.Prompt.Window
 import XMonad.StackSet qualified as W
@@ -36,6 +37,7 @@ import XMonad.Util.EZConfig (additionalKeys)
 import XMonad.Util.NamedScratchpadPatched
 import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
+import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
 
 winMask, altMask :: KeyMask
@@ -336,6 +338,32 @@ ezWinBinds =
     )
 
 ------------------------------------------------------------------------
+-- docs search
+
+newtype TabIndex = TabIndex Int deriving (Read, Show)
+
+instance ExtensionClass TabIndex where
+  initialValue = TabIndex 0
+
+searchDocs :: String -> X ()
+searchDocs prefix = do
+  hideNSP "NSP_docs"
+  openNSPOnScreen "NSP_docs" 0
+  let promptConfig = myPromptConfig
+  inputPrompt promptConfig (prefix ++ " docs") ?+ \query -> do
+    TabIndex currentIndex <- XS.get
+    let nextIndex = if currentIndex < 1 || currentIndex >= 9 then 1 else currentIndex + 1
+    XS.put $ TabIndex nextIndex
+    let cmd = unwords
+          [ "xdotool key ctrl+" ++ show nextIndex
+          , "key ctrl+l key ctrl+a key BackSpace key BackSpace &&  "
+          , "xdotool type \"! \" && "
+          , "xdotool type \" " ++ prefix ++ " " ++ query ++ "\" && "
+          , "xdotool key KP_Enter"
+          ]
+    spawn cmd
+
+------------------------------------------------------------------------
 -- named scratchpads ("NSPs"):
 type NSPDef =
   ( String, -- scratchpad name
@@ -360,6 +388,22 @@ nspDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
+      customFloating $ nspRect 0.8,
+      True
+    ),
+    ( "NSP_docs",
+      "google-chrome-unstable --class=NSP_docs --new-window \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page \
+      \--new-tab chrome://new-tab-page",
+      className =? "NSP_docs",
       customFloating $ nspRect 0.8,
       True
     ),
@@ -656,6 +700,7 @@ getKeybindings conf =
          -- apps
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
+         ((altMask, xK_a), searchDocs "tailwindcss"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
         --  ( (altMask, xK_z),
         --    seeWin
