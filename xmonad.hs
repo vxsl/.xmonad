@@ -84,6 +84,8 @@ killAllWindowsByClass q = do
     Just w -> killWindow w >> killAllWindowsByClass q
     Nothing -> return ()
 
+toggleOrViewNoSP = toggleOrDoSkip ["NSP"] W.greedyView
+
 ------------------------------------------------------------------------
 -- prompt:
 myPromptConfig :: XPConfig
@@ -551,7 +553,7 @@ getKeybindings conf =
     ++ winBindsTmuxaStableView xK_comma 2
     ++ winBindsIDE [xK_b, xK_s]
     ++ [
-      ((altMask, xK_o), toggleOrView "project"),
+      ((altMask, xK_o), toggleOrViewNoSP "project"),
       ((altMask+shiftMask, xK_o), do
         -- windows $  W.view "project"
         seeWin defaultSeeWinParams 
