@@ -39,6 +39,8 @@ import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
 import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
+import XMonad.Layout.Hidden 
+import XMonad.Hooks.ManageHelpers
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -111,15 +113,16 @@ confirm = confirmPrompt myPromptConfig
 ------------------------------------------------------------------------
 -- layout:
 myLayout =
-  ifWider
-    2561
-    (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
-    (tiled ||| Mirror tiled ||| Full ||| Grid)
-  where
-    tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
-    nmaster = 1 -- The default number of windows in the master pane
-    ratio = 3 / 5 -- Default proportion of screen occupied by master pane
-    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
+  hiddenWindows $
+    ifWider
+      2561
+      (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
+      (tiled ||| Mirror tiled ||| Full ||| Grid)
+    where
+      tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
+      nmaster = 1 -- The default number of windows in the master pane
+      ratio = 3 / 5 -- Default proportion of screen occupied by master pane
+      delta = 3 / 100 -- Percent of screen to increment by when resizing panes
 
 ------------------------------------------------------------------------
 -- mouse bindings:
@@ -165,7 +168,8 @@ myManageHook =
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
-      className =? "Google-chrome" --> doShift "project"
+      className =? "Google-chrome" --> doShift "project",
+      className =? "pnpproj" --> doFloatAt 0.88 0.8
     ]
 
 ------------------------------------------------------------------------
@@ -700,6 +704,23 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
+         ((altMask, xK_i), do
+            win <- GNP.getNextMatch (className =? "pnpproj") GNP.Forward
+            debugLog win
+            if isJust win
+              then do
+              focus $ fromJust win
+              withFocused hideWindow
+              -- GNP.nextMatch GNP.History (not <$> (className =? "pnpproj"))
+            else do
+              popped <- popOldestHiddenWindow
+              windows W.focusDown
+          ),
+         ((altMask+shiftMask, xK_i), do
+            spawn "chromium-browser --class=pnpproj --new-window --window-size=500,300 --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222 "
+            -- windows $ W.focusDown
+          ),
+         ((winMask, xK_i), spawn "spawn-with-name pnpproj Google-chrome \"google-chrome --new-window\" 2"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask, xK_a), searchDocs "tailwindcss"),
