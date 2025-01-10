@@ -39,7 +39,7 @@ import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
 import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
-import XMonad.Layout.Hidden 
+import XMonad.Layout.HiddenPatched
 import XMonad.Hooks.ManageHelpers
 
 winMask, altMask :: KeyMask
