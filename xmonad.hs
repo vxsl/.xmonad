@@ -41,6 +41,7 @@ import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
 import XMonad.Layout.HiddenPatched
 import XMonad.Hooks.ManageHelpers
+import Data.Monoid (All(..))
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -192,6 +193,19 @@ myManageHook =
       className =? "Google-chrome" --> doShift "project",
       className =? "partmin-ui" --> doShift "project"
     ]
+
+------------------------------------------------------------------------
+-- event hook:
+
+resizeHook :: Event -> X All
+resizeHook (ConfigureEvent { ev_window = w }) = do
+    className <- runQuery className w
+    when (className == "pnp_whiteboard") $ spawn "lock-tablet-area pnp_whiteboard \"UGTABLET M908 Pen stylus\" \"UGTABLET M908 Pen eraser\""
+    return (All True)
+resizeHook _ = return (All True)
+
+myHandleEventHook = resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
+
 
 ------------------------------------------------------------------------
 -- log hook:
@@ -651,7 +665,7 @@ ezPnpBinds = concatMap createBinds
               if isNothing win then pnpSpawnMinimized pnpDef else hideAllWindowsWithClassPrefix "pnp_"
           )
         ]
-      where 
+      where
         pnpDef = getPnpDefByClassName name
         (index, _, cmd) = pnpDef
 
@@ -686,7 +700,7 @@ pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
           if w < 0.4 then pnpMaximizeAndFocus win
           else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
     else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
-  where 
+  where
     (i,cls,_) = pnpDef
 
 pnpSpawnMaximized :: PnpDef -> X ()
@@ -702,7 +716,7 @@ pnpSpawnMinimized pnpDef = maintainFocus $ do
   popWindowWithClass cls
   win <- GNP.getNextMatch (className =? cls) GNP.Forward
   if isNothing win then spawn cmd else pnpMinimize (fromJust win) pnpDef
-  where 
+  where
     (i,cls,cmd) = pnpDef
 
 ------------------------------------------------------------------------
@@ -973,7 +987,7 @@ getConf xmproc =
             )
           $ avoidStruts myLayout,
       manageHook = namedScratchpadManageHook nsps <+> myManageHook <+> manageSpawn,
-      handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
+      handleEventHook = myHandleEventHook,
       logHook = myLogHook xmproc
     }
 
