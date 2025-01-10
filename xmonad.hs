@@ -457,10 +457,10 @@ nspDefs =
       False
     ),
     ( "NSP_obsidian",
-      "obsidian",
-      className =? "obsidian",
+      "spawn-with-name NSP_obsidian obsidian 'obsidian \"obsidian://open?vault=main\"' 2",
+      className =? "NSP_obsidian",
       customFloating $ centerRect 0.95,
-      True
+      False
     ),
     ( "NSP_homelab",
       "firefox -P clone4 --class NSP_homelab --new-window \
@@ -799,6 +799,7 @@ getKeybindings conf =
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask, xK_a), searchDocs "tailwindcss"),
+         ((altMask+controlMask, xK_u), spawn "spawn-with-name obsidian-alt obsidian \"obsidian \'obsidian://open?vault=mainmirror\'\" 2"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
         --  ( (altMask, xK_z),
         --    seeWin
