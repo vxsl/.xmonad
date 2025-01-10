@@ -95,10 +95,10 @@ centerRect s = center s s
 cornerRect :: Rational -> Int -> W.RationalRect
 cornerRect s idx = W.RationalRect x y w h
   where
-    w = s        
-    h = s        
-    x = 1 - w    
-    y = 1 - h - (fromIntegral idx * h) 
+    w = s
+    h = s
+    x = 1 - w
+    y = 1 - h - (fromIntegral idx * h)
 
 maintainFocus :: X () -> X ()
 maintainFocus action = do
@@ -190,10 +190,52 @@ myManageHook =
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
       className =? "Google-chrome" --> doShift "project",
-      className =? "partmin-ui" --> doShift "project",
-      className =? "pnp_whiteboard" --> doRectFloat (centerRect 0.7),
-      className =? "pnp_proj" --> doFloatAt 0.87 0.864
+      className =? "partmin-ui" --> doShift "project"
     ]
+
+------------------------------------------------------------------------
+-- log hook:
+newtype LastFocusedWindow = LastFocusedWindow (Maybe Window)
+    deriving (Typeable, Read, Show)
+instance ExtensionClass LastFocusedWindow where
+    initialValue = LastFocusedWindow Nothing
+myLogHook xmproc = do
+  refocusLastLogHook
+  fadeOutLogHook
+    (fadeIf
+      ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp" <||> (("pnp_" `isPrefixOf`) <$> className)))
+      0.2
+    )
+  nsHideOnFocusLoss
+    (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
+  dynamicLogWithPP
+    def
+      { ppOutput = hPutStrLn xmproc,
+        ppSort = mkWsSort $ return compareNumbers,
+        ppTitle = mempty,
+        ppCurrent = xmobarColor "#00ff1e" "#000000",
+        ppHidden = mempty,
+        ppVisible = xmobarColor "#ff0000" "#000000",
+        ppSep = "  ",
+        ppWsSep = "  ",
+        ppLayout = const ""
+      }
+  pnpTrackFocusChange
+
+pnpTrackFocusChange :: X ()
+pnpTrackFocusChange = do
+  ws <- gets windowset
+  let focusedWindow = W.focus <$> W.stack (W.workspace (W.current ws))
+  LastFocusedWindow lastFocused <- XS.get
+  when (focusedWindow /= lastFocused) $ do
+    XS.put $ LastFocusedWindow focusedWindow
+    case lastFocused of
+      Just lw -> do
+        cls <- runQuery className lw
+        when ("pnp_" `isPrefixOf` cls) $
+          let pnpDef = getPnpDefByClassName cls
+           in pnpMinimize lw pnpDef
+      Nothing -> return ()
 
 ------------------------------------------------------------------------
 -- seeWin: a function to get the next occurrence of a window matching a query
@@ -568,45 +610,100 @@ hideAllNSPs =
     nspDefs
 
 ------------------------------------------------------------------------
--- picture-in-picture:
+-- picture-in-picture binds:
+type PnpDef' = (String, String)
+
+pnpDefs' :: [PnpDef']
+pnpDefs' = [
+    (
+      "pnp_whiteboard",
+      "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
+    ),
+    (
+      "pnp_proj",
+      "multi-instance-chromium-browser --class=pnp_proj --new-window --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222"
+    )
+  ]
+
+type PnpDef = (Int, String, String)
+pnpDefs = zipWith (\i (n, c) -> (i, n, c)) [0..] pnpDefs'
+
+getPnpDefByClassName :: String -> PnpDef
+getPnpDefByClassName cls = fromJust $ find (\(_, n, _) -> n == cls) pnpDefs
+
+data PnpBindParams = PnpBindParams
+  {
+    name :: String,
+    toggleMaximizationBind :: (KeyMask, KeySym),
+    toggleVisibilityBind :: (KeyMask, KeySym)
+  }
+
+ezPnpBinds = concatMap createBinds
+  where
+    getWin cls = GNP.getNextMatch (className =? cls) GNP.Forward
+    createBinds PnpBindParams {name, toggleMaximizationBind, toggleVisibilityBind} = [
+          (toggleMaximizationBind, do
+              win <- getWin name
+              if isNothing win then pnpSpawnMaximized pnpDef else pnpToggleMaximization pnpDef
+          ),
+          (toggleVisibilityBind, do
+              win <- getWin name
+              if isNothing win then pnpSpawnMinimized pnpDef else hideAllWindowsWithClassPrefix "pnp_"
+          )
+        ]
+      where 
+        pnpDef = getPnpDefByClassName name
+        (index, _, cmd) = pnpDef
+
+------------------------------------------------------------------------
+-- picture-in-picture utils:
 
 pnpMaximizeAndFocus :: Window -> X ()
 pnpMaximizeAndFocus win = do
   windows $ \ws -> W.focusWindow win $ W.float win (centerRect 0.7) $ W.insertUp win $ W.delete win ws
 
-pnpMinimize :: Int -> Window -> X ()
-pnpMinimize i win = do
+pnpMinimize :: Window -> PnpDef -> X ()
+pnpMinimize win (i,_,_) = do
   windows $ \ws -> W.float win (cornerRect 0.2 i) ws
 
-pnpMinimizeAndReturnFocus :: Int -> Window -> Window -> X ()
-pnpMinimizeAndReturnFocus i win originallyFocused = do
-  pnpMinimize i win
+pnpMinimizeAndReturnFocus :: Window -> Window -> PnpDef -> X ()
+pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
+  pnpMinimize win pnpDef
   if originallyFocused /= win then do
     focus originallyFocused
   else windows W.focusDown
 
-toggleMaximization :: Int -> Window -> Window -> X ()
-toggleMaximization i win originallyFocused = do
-  ws <- gets windowset
-  let isFloating = M.member win (W.floating ws)
-  if isFloating then do
-    case M.lookup win (W.floating ws) of
-      Just (W.RationalRect x y w h) -> do
-        if w < 0.4 then pnpMaximizeAndFocus win
-        else pnpMinimizeAndReturnFocus i win originallyFocused
-  else pnpMinimizeAndReturnFocus i win originallyFocused
+pnpToggleMaximization :: PnpDef -> X ()
+pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
+    win' <- GNP.getNextMatch (className =? cls) GNP.Forward
+    when (isNothing win') $ return mempty
+    let win = fromJust win'
+    ws <- gets windowset
+    let isFloating = M.member win (W.floating ws)
+    if isFloating then do
+      case M.lookup win (W.floating ws) of
+        Just (W.RationalRect x y w h) -> do
+          if w < 0.4 then pnpMaximizeAndFocus win
+          else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
+    else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
+  where 
+    (i,cls,_) = pnpDef
 
-pnpSpawnMaximized :: String -> String -> X ()
-pnpSpawnMaximized cls cmd = do
+pnpSpawnMaximized :: PnpDef -> X ()
+pnpSpawnMaximized pnpDef = do
   popWindowWithClass cls
   win <- GNP.getNextMatch (className =? cls) GNP.Forward
   maybe (spawn cmd) pnpMaximizeAndFocus win
+  where
+    (i,cls,cmd) = pnpDef
 
-pnpSpawnMinimized :: Int -> String -> String -> X ()
-pnpSpawnMinimized i cls cmd = maintainFocus $ do
+pnpSpawnMinimized :: PnpDef -> X ()
+pnpSpawnMinimized pnpDef = maintainFocus $ do
   popWindowWithClass cls
   win <- GNP.getNextMatch (className =? cls) GNP.Forward
-  maybe (spawn cmd) (pnpMinimize i) win
+  if isNothing win then spawn cmd else pnpMinimize (fromJust win) pnpDef
+  where 
+    (i,cls,cmd) = pnpDef
 
 ------------------------------------------------------------------------
 -- keybindings:
@@ -630,27 +727,27 @@ getKeybindings conf =
     ++ winBindsIDE [xK_b, xK_s]
     ++ [
       ((altMask, xK_o), toggleOrViewNoSP "project"),
-      ((altMask+shiftMask, xK_o), do
+      ((altMask+controlMask, xK_o), do
         -- windows $  W.view "project"
-        seeWin defaultSeeWinParams 
+        seeWin defaultSeeWinParams
           { queryStr = "Google-chrome",
-            notFoundAction = spawn "google-chrome --new-window",
+            notFoundAction = spawn "google-chrome --new-window --remote-debugging-port=9222 http://localhost:5173",
             exact = True,
             useClassName = True,
             extraAction = mempty
-          }),
-      ((altMask, xK_i), do
-        ws <- gets windowset
-        withFocused $ \originallyFocused -> do
-          win <- GNP.getNextMatch (className =? "pnp_whiteboard") GNP.Forward
-          if isNothing win then pnpSpawnMaximized "pnp_whiteboard" "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
-          else toggleMaximization 0 (fromJust win) originallyFocused
-      ),
-      ((altMask+shiftMask, xK_i), do
-          win <- GNP.getNextMatch (className =? "pnp_whiteboard") GNP.Forward
-          if isJust win then hideWindowWithClass "pnp_whiteboard"
-          else pnpSpawnMinimized 0 "pnp_whiteboard" "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
-      )
+          })
+    ]
+    ++ ezPnpBinds [
+      PnpBindParams
+        { name = "pnp_whiteboard",
+          toggleMaximizationBind = (altMask, xK_i),
+          toggleVisibilityBind = (altMask+shiftMask, xK_i)
+        },
+      PnpBindParams
+        { name = "pnp_proj",
+          toggleMaximizationBind = (altMask+controlMask, xK_o),
+          toggleVisibilityBind = (altMask+shiftMask, xK_o)
+        }
     ]
     ++ ezWinBinds
       [
@@ -727,7 +824,9 @@ getKeybindings conf =
             hideAllNSPs
             hideAllWindowsWithClassPrefix "pnp_"
          ),
-         ((altMask+controlMask, xK_grave), toggleAllWindowsWithClassPrefix "pnp_"),
+         ((altMask+controlMask, xK_grave), maintainFocus $ do
+            toggleAllWindowsWithClassPrefix "pnp_"
+          ),
          ( (altMask, xK_Escape),
            do
              ws <- gets windowset
@@ -779,23 +878,6 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
-         ((altMask, xK_i), do
-            win <- GNP.getNextMatch (className =? "pnpproj") GNP.Forward
-            debugLog win
-            if isJust win
-              then do
-              focus $ fromJust win
-              withFocused hideWindow
-              -- GNP.nextMatch GNP.History (not <$> (className =? "pnpproj"))
-            else do
-              popped <- popOldestHiddenWindow
-              windows W.focusDown
-          ),
-         ((altMask+shiftMask, xK_i), do
-            spawn "chromium-browser --class=pnpproj --new-window --window-size=500,300 --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222 "
-            -- windows $ W.focusDown
-          ),
-         ((winMask, xK_i), spawn "spawn-with-name pnpproj Google-chrome \"google-chrome --new-window\" 2"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask, xK_a), searchDocs "tailwindcss"),
@@ -870,7 +952,7 @@ getKeybindings conf =
 getConf xmproc =
   def
     { terminal = "alacritty",
-      focusFollowsMouse = False,
+      focusFollowsMouse = True,
       clickJustFocuses = False,
       borderWidth = 0,
       modMask = winMask,
@@ -892,27 +974,7 @@ getConf xmproc =
           $ avoidStruts myLayout,
       manageHook = namedScratchpadManageHook nsps <+> myManageHook <+> manageSpawn,
       handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
-      logHook =
-        refocusLastLogHook
-          >> fadeOutLogHook (fadeIf ((&&) <$> isUnfocused <*> (
-            className =? "Com.github.xournalpp.xournalpp"
-            <||> (("pnp_" `isPrefixOf`) <$> className)
-          )) 0.2)
-          >> nsHideOnFocusLoss
-            (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
-            <+> dynamicLogWithPP
-              def
-                { ppOutput = hPutStrLn xmproc,
-                  ppSort = mkWsSort $ return compareNumbers,
-                  ppTitle = mempty,
-                  ppCurrent = xmobarColor "#00ff1e" "#000000",
-                  ppHidden = mempty,
-                  ppVisible = xmobarColor "#ff0000" "#000000",
-                  ppSep = "  ",
-                  ppWsSep = "  ",
-                  ppLayout = const ""
-                }
-              <> refocusLastLogHook
+      logHook = myLogHook xmproc
     }
 
 ------------------------------------------------------------------------
