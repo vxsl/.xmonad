@@ -88,6 +88,25 @@ killAllWindowsByClass q = do
 
 toggleOrViewNoSP = toggleOrDoSkip ["NSP"] W.greedyView
 
+centerRect s = center s s
+  where
+    center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
+
+cornerRect :: Rational -> Int -> W.RationalRect
+cornerRect s idx = W.RationalRect x y w h
+  where
+    w = s        
+    h = s        
+    x = 1 - w    
+    y = 1 - h - (fromIntegral idx * h) 
+
+maintainFocus :: X () -> X ()
+maintainFocus action = do
+  ws <- gets windowset
+  let focused = W.focus <$> W.stack (W.workspace (W.current ws))
+  action
+  focus $ fromJust focused
+
 ------------------------------------------------------------------------
 -- prompt:
 myPromptConfig :: XPConfig
@@ -141,6 +160,7 @@ myStartupHook = do
   sendMessage (SetStruts [] [U,L])
   spawnOnce "nitrogen --restore &"
   mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
+  hideAllWindowsWithClassPrefix "pnp_"
   windows $ focusScreen 0
   where
     cycleAllWorkspacesOnScreen i = do
@@ -394,7 +414,7 @@ nspDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
-      customFloating $ nspRect 0.8,
+      customFloating $ centerRect 0.8,
       True
     ),
     ( "NSP_docs",
@@ -410,7 +430,7 @@ nspDefs =
       \--new-tab chrome://new-tab-page \
       \--new-tab chrome://new-tab-page",
       className =? "NSP_docs",
-      customFloating $ nspRect 0.8,
+      customFloating $ centerRect 0.8,
       True
     ),
     ( "NSP_browse",
@@ -436,7 +456,7 @@ nspDefs =
     ( "NSP_obsidian",
       "obsidian",
       className =? "obsidian",
-      customFloating $ nspRect 0.95,
+      customFloating $ centerRect 0.95,
       True
     ),
     ( "NSP_homelab",
@@ -454,31 +474,31 @@ nspDefs =
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
-      customFloating $ nspRect 0.9,
+      customFloating $ centerRect 0.9,
       False
     ),
     ( "NSP_tmuxa-2",
       "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.toml",
       className =? "NSP_tmuxa-2",
-      customFloating $ nspRect 0.9, 
+      customFloating $ centerRect 0.9,
       False
     ),
     ( "NSP_tmuxa-3",
       "unique-term NSP_tmuxa-3 \"zsh\" " ++ " /home/kyle/.config/alacritty/alacritty3.toml",
       className =? "NSP_tmuxa-3",
-      customFloating $ nspRect 0.4,
+      customFloating $ centerRect 0.4,
       False
     ),
     ( "NSP_testing",
       "",
       className =? "Cypress",
-      customFloating $ nspRect 0.7,
+      customFloating $ centerRect 0.7,
       False
     ),
     ( "NSP_meeting",
       "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
       className =? "NSP_meeting",
-      customFloating $ nspRect 0.7,
+      customFloating $ centerRect 0.7,
       False
     ),
     ( "NSP_audio",
@@ -486,13 +506,13 @@ nspDefs =
       \-new-tab -url https://open.spotify.com/ \
       \-new-tab -url https://noises.online/",
       className =? "NSP_audio",
-      customFloating $ nspRect 0.7,
+      customFloating $ centerRect 0.7,
       False
     ),
     ( "NSP_spotify",
       "spotify",
       className =? "Spotify",
-      customFloating $ nspRect 0.7,
+      customFloating $ centerRect 0.7,
       False
     ),
     -- ( "NSP_project",
@@ -509,15 +529,11 @@ nspDefs =
     ( "NSP_hubstaff",
       "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
       className =? "Netsoft-com.netsoft.hubstaff",
-      customFloating $ nspRect 0.3,
+      customFloating $ centerRect 0.3,
       -- nonFloating,
       True
     )
   ]
-  where
-    nspRect s = center s s
-      where
-        center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
 
 mapToNSP :: [NSPDef] -> [NamedScratchpad]
 mapToNSP = map (\(n, tn, cn, cf, _) -> NS n tn cn cf)
@@ -547,6 +563,47 @@ hideAllNSPs =
           windows $ W.shiftWin "NSP" $ fromJust win
     )
     nspDefs
+
+------------------------------------------------------------------------
+-- picture-in-picture:
+
+pnpMaximizeAndFocus :: Window -> X ()
+pnpMaximizeAndFocus win = do
+  windows $ \ws -> W.focusWindow win $ W.float win (centerRect 0.7) $ W.insertUp win $ W.delete win ws
+
+pnpMinimize :: Int -> Window -> X ()
+pnpMinimize i win = do
+  windows $ \ws -> W.float win (cornerRect 0.2 i) ws
+
+pnpMinimizeAndReturnFocus :: Int -> Window -> Window -> X ()
+pnpMinimizeAndReturnFocus i win originallyFocused = do
+  pnpMinimize i win
+  if originallyFocused /= win then do
+    focus originallyFocused
+  else windows W.focusDown
+
+toggleMaximization :: Int -> Window -> Window -> X ()
+toggleMaximization i win originallyFocused = do
+  ws <- gets windowset
+  let isFloating = M.member win (W.floating ws)
+  if isFloating then do
+    case M.lookup win (W.floating ws) of
+      Just (W.RationalRect x y w h) -> do
+        if w < 0.4 then pnpMaximizeAndFocus win
+        else pnpMinimizeAndReturnFocus i win originallyFocused
+  else pnpMinimizeAndReturnFocus i win originallyFocused
+
+pnpSpawnMaximized :: String -> String -> X ()
+pnpSpawnMaximized cls cmd = do
+  popWindowWithClass cls
+  win <- GNP.getNextMatch (className =? cls) GNP.Forward
+  maybe (spawn cmd) pnpMaximizeAndFocus win
+
+pnpSpawnMinimized :: Int -> String -> String -> X ()
+pnpSpawnMinimized i cls cmd = maintainFocus $ do
+  popWindowWithClass cls
+  win <- GNP.getNextMatch (className =? cls) GNP.Forward
+  maybe (spawn cmd) (pnpMinimize i) win
 
 ------------------------------------------------------------------------
 -- keybindings:
@@ -656,7 +713,11 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- NSPs:
          ((winMask, xK_minus), toggleOrView "NSP"),
-         ((altMask, xK_grave), hideAllNSPs),
+         ((altMask, xK_grave), do
+            hideAllNSPs
+            hideAllWindowsWithClassPrefix "pnp_"
+         ),
+         ((altMask+controlMask, xK_grave), toggleAllWindowsWithClassPrefix "pnp_"),
          ( (altMask, xK_Escape),
            do
              ws <- gets windowset
@@ -822,7 +883,10 @@ getConf xmproc =
       handleEventHook = refocusLastWhen $ refocusingIsActive <||> isFloat,
       logHook =
         refocusLastLogHook
-          >> fadeOutLogHook (fadeIf ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp")) 0.2)
+          >> fadeOutLogHook (fadeIf ((&&) <$> isUnfocused <*> (
+            className =? "Com.github.xournalpp.xournalpp"
+            <||> (("pnp_" `isPrefixOf`) <$> className)
+          )) 0.2)
           >> nsHideOnFocusLoss
             (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
             <+> dynamicLogWithPP
