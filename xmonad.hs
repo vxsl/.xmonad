@@ -185,11 +185,14 @@ myManageHook =
       className =? "Org.gnome.Nautilus" --> doFloat,
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
+      title =? "Profile error occurred" --> doFloat,
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
       className =? "Google-chrome" --> doShift "project",
-      className =? "pnpproj" --> doFloatAt 0.88 0.8
+      className =? "partmin-ui" --> doShift "project",
+      className =? "pnp_whiteboard" --> doRectFloat (centerRect 0.7),
+      className =? "pnp_proj" --> doFloatAt 0.87 0.864
     ]
 
 ------------------------------------------------------------------------
@@ -635,7 +638,19 @@ getKeybindings conf =
             exact = True,
             useClassName = True,
             extraAction = mempty
-          })
+          }),
+      ((altMask, xK_i), do
+        ws <- gets windowset
+        withFocused $ \originallyFocused -> do
+          win <- GNP.getNextMatch (className =? "pnp_whiteboard") GNP.Forward
+          if isNothing win then pnpSpawnMaximized "pnp_whiteboard" "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
+          else toggleMaximization 0 (fromJust win) originallyFocused
+      ),
+      ((altMask+shiftMask, xK_i), do
+          win <- GNP.getNextMatch (className =? "pnp_whiteboard") GNP.Forward
+          if isJust win then hideWindowWithClass "pnp_whiteboard"
+          else pnpSpawnMinimized 0 "pnp_whiteboard" "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
+      )
     ]
     ++ ezWinBinds
       [
@@ -651,11 +666,6 @@ getKeybindings conf =
             spawn "tmux-pane-view",
           Nothing
         ),
-        -- ( xK_i,
-        --   "Scrivano",
-        --   spawn "scrivano",
-        --   Just $ defaultWinBindsParams {exact = True, extraAction = spawn "$HOME/bin/personal/confwacom"}
-        -- ),
         ( xK_p,
           "firefox",
           spawn "firefox --new-window",
