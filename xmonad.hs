@@ -278,16 +278,36 @@ myHandleEventHook =
 
 ------------------------------------------------------------------------
 -- log hook:
+
+newtype FadeOpacity = FadeOpacity { getFadeOpacity :: Rational }
+  deriving (Typeable)
+instance ExtensionClass FadeOpacity where
+  initialValue = FadeOpacity 0.2
+setFade newVal = do
+  XS.modify $ const $ FadeOpacity newVal
+  refresh
+
+rotaryAdjustFade f = do
+  val <- getFadeOpacity <$> XS.get
+  let newVal = max 0 (min 1 (f val))
+  if val <= 0 && newVal > val then do
+    greedyUnhidePNPs
+    setFade $ max 0.2 newVal
+  else do
+    setFade newVal
+    when (newVal <= 0) hidePNPs
+
 newtype LastFocusedWindow = LastFocusedWindow (Maybe Window)
     deriving (Typeable, Read, Show)
 instance ExtensionClass LastFocusedWindow where
     initialValue = LastFocusedWindow Nothing
 myLogHook xmproc = do
+  FadeOpacity fade <- XS.get
   refocusLastLogHook
   fadeOutLogHook
     (fadeIf
       ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp" <||> (("PNP_" `isPrefixOf`) <$> className)))
-      0.2
+      fade
     )
   nsHideOnFocusLoss
     (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
@@ -764,6 +784,8 @@ unhidePNPs = do
   nspNames <- mapM (runQuery className) hiddenWins
   mapM_ (`openNSPOnScreen` 0) nspNames
   XS.put $ HiddenPNPWindows []
+  fade <- getFadeOpacity <$> XS.get
+  when (fade <= 0.2) $ setFade 0.2
 
 greedyUnhidePNPs :: X ()
 greedyUnhidePNPs = do
@@ -771,6 +793,8 @@ greedyUnhidePNPs = do
   nspNames <- mapM (runQuery className) hiddenWins
   mapM_ (`openNSPOnScreen` 0) (if null nspNames then map (\(_, (n, _, _, _, _)) -> n) pnpDefs else nspNames)
   XS.put $ HiddenPNPWindows []
+  fade <- getFadeOpacity <$> XS.get
+  when (fade <= 0.2) $ setFade 0.2
 
 pnpMaximize :: PnpDef -> X ()
 pnpMaximize pnpDef = do
@@ -984,6 +1008,12 @@ getKeybindings conf =
              openNSPOnScreen "NSP_tmuxa-2" 0
          ),
          ------------------------------------------------------------
+         -- window fade:
+         ((altMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 0.1)),
+         ((altMask+shiftMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 10)),
+         ((altMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+0.1)),
+         ((altMask+shiftMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+10)),
+         ------------------------------------------------------------
          -- volume:
          ---------- up/down
          ((0, xK_Insert), spawn "volctrl -d"),
@@ -1002,7 +1032,7 @@ getKeybindings conf =
          ((altMask + shiftMask, xF86XK_AudioRaiseVolume), spawn "volctrl -uf"),
          ---------- mute
          ((altMask + shiftMask + controlMask, xK_Print), spawn "volmute"),
-         ((altMask + shiftMask + controlMask, xF86XK_AudioLowerVolume), spawn "volmute"),
+        --  ((altMask + shiftMask + controlMask, xF86XK_AudioLowerVolume), spawn "volmute"),
          ((0, xF86XK_AudioMute), spawn "volmute"),
          ---------------------------------------------------------------
          -- media control:
