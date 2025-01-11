@@ -556,7 +556,7 @@ winBindsTmuxaStableView keySym num =
           ++ name
           ++ " \"tmuxa "
           ++ name
-          ++ " $HOME\""
+          ++ " --dir=$HOME\""
           ++ if num >= 2
             then " $HOME/.config/alacritty/alacritty" ++ show num ++ ".yml"
             else ""
@@ -698,13 +698,13 @@ nspDefs' =
       True
     ),
     ( "NSP_tmuxa-1",
-      "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
+      "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 --dir=$HOME\"",
       className =? "NSP_tmuxa-1",
       Left $ centerRect 0.9,
       False
     ),
     ( "NSP_tmuxa-2",
-      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.toml",
+      "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 --dir=$HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.toml",
       className =? "NSP_tmuxa-2",
       Left $ centerRect 0.9,
       False
@@ -763,10 +763,12 @@ nspDefs' =
 
 pnpDefs' :: [NSPDef] = [
     ( "PNP_xmonad-log",
-      "unique-term PNP_xmonad-log \"zsh -i -c 'tail -f " ++ debugLogFile ++ "'; zsh\" $HOME/.config/alacritty/transparent.toml",
-      className =? "PNP_xmonad-log",
-      Left $ centerRect 0.7,
-      False
+        "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_xmonad-log "
+        ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"tail -f " ++ debugLogFile ++ "\\\"'\" "
+        ++ "$HOME/.config/alacritty/transparent.toml",
+        className =? "PNP_xmonad-log",
+        Left $ centerRect 0.7,
+        False
     ),
     ( "PNP_whiteboard",
       "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
