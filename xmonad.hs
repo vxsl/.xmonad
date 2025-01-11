@@ -267,7 +267,13 @@ resizeHook (ConfigureEvent { ev_window = w }) = do
     return (All True)
 resizeHook _ = return (All True)
 
-myHandleEventHook = resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
+summarizeWorkspaceStateEventHook _ = do
+  printWorkspaceState
+  return (All True)
+
+myHandleEventHook =
+  -- summarizeWorkspaceStateEventHook .
+  resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
 
 
 ------------------------------------------------------------------------
