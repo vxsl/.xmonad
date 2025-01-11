@@ -44,6 +44,9 @@ import XMonad.Util.WorkspaceCompare
 import XMonad.Hooks.ManageHelpers
 import Data.Monoid (All(..))
 import GHC.Utils.Monad (whenM)
+import Text.Printf (printf)
+import System.Posix (sleep, touchFile)
+import System.Directory (removeFile, renameFile, doesFileExist)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -160,13 +163,30 @@ findWinsOnAnyWorkspace q = do
   let allWindows = W.allWindows ws
   filterM (runQuery q) allWindows
 
+printWorkspaceState :: X String
 printWorkspaceState = do
   ws <- gets windowset
-  debugLog "\n========================"
-  let W.Workspace _ _ stack = W.workspace $ W.current ws
-  let curWorkspaceWindowList = W.integrate' stack
-  debugLog stack
-  debugLog curWorkspaceWindowList
+
+  let windowIdToName w = do
+        name <- runQuery className w
+        return (show w, name)
+
+  let W.Workspace _ _ stack' = W.workspace $ W.current ws
+  if isJust stack' then do
+    let stack = fromJust stack'
+
+    let curWorkspaceWindowList = W.integrate stack  -- Extract window list
+    windowMap <- mapM windowIdToName curWorkspaceWindowList
+    let nameMap = M.fromList windowMap
+
+    let curWorkspaceWindowList = W.integrate stack
+    let printName w = fromMaybe (show w) (M.lookup (show w) nameMap)
+    return $ "\n\n========================\n" ++ show stack ++ "\n" ++ show nameMap ++ "\n" ++
+      "focus: " ++ printName stack.focus ++
+      "\nup: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.up) ++
+      "\ndown: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.down)
+  else return "empty"
+
 
 getCurrentWorkspaceID :: X String
 getCurrentWorkspaceID = do
@@ -220,12 +240,61 @@ myMouseBindings XConfig {XMonad.modMask = modm} =
 
 ------------------------------------------------------------------------
 -- startup hook:
+logXmonadState :: X ()
+logXmonadState = do
+  ws <- gets windowset
+  let currentScreen = W.current ws
+      currentLayout = description . W.layout $ W.workspace currentScreen
+  let focused = W.focus <$> W.stack (W.workspace (W.current ws))
+  let result :: String = printf "Screen '%s' is active on workspace '%s'\nLayout: '%s'\nFocused window: '%s'"
+                          (show $ W.screen currentScreen)
+                          (W.tag $ W.workspace currentScreen)
+                          currentLayout
+                          (show $ fromJust focused)
+  debugLog result
+
 myStartupHook :: X ()
 myStartupHook = do
   sendMessage (SetStruts [] [U,L])
   spawnOnce "nitrogen --restore &"
   mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
   windows $ focusScreen 0
+
+  let pnpDef = getPnpDefByClassName "PNP_xmonad-log"
+  let (_, (cls, cmd, _, _, _)) = pnpDef
+
+  spawn $ "xdotool search --classname " ++ cls ++ " windowclose"
+  liftIO $ sleep 1
+
+  oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
+  when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
+  curExists <- io $ doesFileExist debugLogFile
+  when curExists $ io $ renameFile debugLogFile (debugLogFile ++ ".1")
+
+  spawn cmd
+  liftIO $ sleep 1 -- TODO find a less hacky solution to wait for previous commands to finish
+
+  spawn $ "\
+     \echo ==================================================================== >> " ++ debugLogFile ++ "\
+     \ && date >> " ++ debugLogFile ++ "\
+     \ && echo ==================================================================== >> " ++ persistentLogFile ++ "\
+     \ && date >> " ++ persistentLogFile ++ "\
+     \"
+  liftIO $ sleep 1
+
+
+  debugLog "=====================================================================\n"
+  debugLog "*********************************************************"
+  logXmonadState
+  debugLog "*********************************************************\n"
+
+  debugLog "*********************************************************"
+  workspaceState <- printWorkspaceState
+  debugLog workspaceState
+  debugLog "*********************************************************\n"
+
+  spawn $ "x-summary >> " ++ debugLogFile
+
   where
     cycleAllWorkspacesOnScreen i = do
       mapM_
@@ -259,6 +328,11 @@ myManageHook =
 
 ------------------------------------------------------------------------
 -- event hook:
+newtype WorkspaceState = WorkspaceState String
+  deriving (Typeable, Read, Show)
+instance ExtensionClass WorkspaceState where
+  initialValue = WorkspaceState ""
+
 
 resizeHook :: Event -> X All
 resizeHook (ConfigureEvent { ev_window = w }) = do
@@ -268,7 +342,11 @@ resizeHook (ConfigureEvent { ev_window = w }) = do
 resizeHook _ = return (All True)
 
 summarizeWorkspaceStateEventHook _ = do
-  printWorkspaceState
+  WorkspaceState prev <- XS.get
+  cur <- printWorkspaceState
+  when (prev /= cur) $ do
+    XS.put $ WorkspaceState cur
+    debugLog cur
   return (All True)
 
 myHandleEventHook =
