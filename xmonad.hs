@@ -47,10 +47,15 @@ import GHC.Utils.Monad (whenM)
 import Text.Printf (printf)
 import System.Posix (sleep, touchFile)
 import System.Directory (removeFile, renameFile, doesFileExist)
+import Numeric
+import Data.Ratio
+import GHC.Prelude (Fractional(fromRational))
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
 altMask = mod1Mask
+
+debug=False
 
 ------------------------------------------------------------------------
 -- workspaces:
@@ -193,6 +198,9 @@ getCurrentWorkspaceID = do
   ws <- gets windowset
   return $ W.tag $ W.workspace $ W.current ws
 
+rationalAsDecimal :: Rational -> String
+rationalAsDecimal v = show $ fromRational v
+
 ------------------------------------------------------------------------
 -- prompt:
 myPromptConfig :: XPConfig
@@ -255,45 +263,48 @@ logXmonadState = do
 
 myStartupHook :: X ()
 myStartupHook = do
+  spawn "picom"
   sendMessage (SetStruts [] [U,L])
   spawnOnce "nitrogen --restore &"
   mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
   windows $ focusScreen 0
+  setFade defaultFadeOpacity
 
-  let pnpDef = getPnpDefByClassName "PNP_xmonad-log"
-  let (_, (cls, cmd, _, _, _)) = pnpDef
+  when debug $ do
+    let pnpDef = getPnpDefByClassName "PNP_log"
+    let (_, (cls, cmd, _, _, _)) = pnpDef
 
-  spawn $ "xdotool search --classname " ++ cls ++ " windowclose"
-  liftIO $ sleep 1
+    spawn $ "xdotool search --classname " ++ cls ++ " windowclose"
+    liftIO $ sleep 1
 
-  oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
-  when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
-  curExists <- io $ doesFileExist debugLogFile
-  when curExists $ io $ renameFile debugLogFile (debugLogFile ++ ".1")
+    oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
+    when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
+    curExists <- io $ doesFileExist debugLogFile
+    when curExists $ io $ renameFile debugLogFile (debugLogFile ++ ".1")
 
-  spawn cmd
-  liftIO $ sleep 1 -- TODO find a less hacky solution to wait for previous commands to finish
+    spawn cmd
+    liftIO $ sleep 1 -- TODO find a less hacky solution to wait for previous commands to finish
 
-  spawn $ "\
-     \echo ==================================================================== >> " ++ debugLogFile ++ "\
-     \ && date >> " ++ debugLogFile ++ "\
-     \ && echo ==================================================================== >> " ++ persistentLogFile ++ "\
-     \ && date >> " ++ persistentLogFile ++ "\
-     \"
-  liftIO $ sleep 1
+    spawn $ "\
+      \echo ==================================================================== >> " ++ debugLogFile ++ "\
+      \ && date >> " ++ debugLogFile ++ "\
+      \ && echo ==================================================================== >> " ++ persistentLogFile ++ "\
+      \ && date >> " ++ persistentLogFile ++ "\
+      \"
+    liftIO $ sleep 1
 
 
-  debugLog "=====================================================================\n"
-  debugLog "*********************************************************"
-  logXmonadState
-  debugLog "*********************************************************\n"
+    debugLog "=====================================================================\n"
+    debugLog "*********************************************************"
+    logXmonadState
+    debugLog "*********************************************************\n"
 
-  debugLog "*********************************************************"
-  workspaceState <- printWorkspaceState
-  debugLog workspaceState
-  debugLog "*********************************************************\n"
+    debugLog "*********************************************************"
+    workspaceState <- printWorkspaceState
+    debugLog workspaceState
+    debugLog "*********************************************************\n"
 
-  spawn $ "x-summary >> " ++ debugLogFile
+    spawn $ "x-summary >> " ++ debugLogFile
 
   where
     cycleAllWorkspacesOnScreen i = do
@@ -357,10 +368,12 @@ myHandleEventHook =
 ------------------------------------------------------------------------
 -- log hook:
 
+defaultFadeOpacity = 0.2
+
 newtype FadeOpacity = FadeOpacity { getFadeOpacity :: Rational }
   deriving (Typeable)
 instance ExtensionClass FadeOpacity where
-  initialValue = FadeOpacity 0.2
+  initialValue = FadeOpacity defaultFadeOpacity
 setFade newVal = do
   XS.modify $ const $ FadeOpacity newVal
   refresh
@@ -368,9 +381,11 @@ setFade newVal = do
 rotaryAdjustFade f = do
   val <- getFadeOpacity <$> XS.get
   let newVal = max 0 (min 1 (f val))
-  if val <= 0 && newVal > val then do
-    greedyUnhidePNPs
-    setFade $ max 0.2 newVal
+  -- debugLog $ "rotaryAdjustFade: " ++ rationalAsDecimal newVal ++ " (was " ++ rationalAsDecimal val ++ ")"
+  if newVal > val then do
+    visiblePNPs <- getPNPs
+    when (null visiblePNPs) unhidePNPs
+    setFade $ max defaultFadeOpacity newVal
   else do
     setFade newVal
     when (newVal <= 0) hidePNPs
@@ -450,6 +465,7 @@ winQuery useClassName exact str =
 seeWin :: SeeWinParams -> X ()
 seeWin SeeWinParams {queryStr, notFoundAction, greedy, searchBackwards, exact, useClassName, extraAction} =
   do
+    hideAllNSPs
     win <-
       GNP.getNextMatch
         (winQuery useClassName exact queryStr)
@@ -473,11 +489,11 @@ type AbbreviatedNspBindsParams = (KeySym, String)
 
 nspBinds :: NspBindsParams -> [((KeyMask, KeySym), X ())]
 nspBinds NspBindsParams {keySym, nspName} =
-  [ ((altMask, keySym), openNSPOnScreen nspName 0),
+  [ ((altMask, keySym), openNSPOrPNPOnScreen nspName 0),
     ( (altMask + shiftMask, keySym),
       do
         hideNSP nspName
-        openNSPOnScreen nspName 0
+        openNSPOrPNPOnScreen nspName 0
         -- resetFocusedNSP
     )
   ]
@@ -600,7 +616,7 @@ instance ExtensionClass TabIndex where
 searchDocs :: String -> X ()
 searchDocs prefix = do
   hideNSP "NSP_docs"
-  openNSPOnScreen "NSP_docs" 0
+  openNSPOrPNPOnScreen "NSP_docs" 0
   let promptConfig = myPromptConfig
   inputPrompt promptConfig (prefix ++ " docs") ?+ \query -> do
     TabIndex currentIndex <- XS.get
@@ -624,6 +640,12 @@ type NSPDef =
     Either W.RationalRect ManageHook,
     Bool -- hide on focus loss
   )
+
+getPNPs :: X [Window]
+getPNPs = findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
+
+getNSPs :: X [Window]
+getNSPs = findWinsOnActiveWorkspace (("NSP_" `isPrefixOf`) <$> className)
 
 nspDefs' :: [NSPDef]
 nspDefs' =
@@ -721,12 +743,6 @@ nspDefs' =
       Left $ centerRect 0.7,
       False
     ),
-    ( "NSP_meeting",
-      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
-      className =? "NSP_meeting",
-      Left $ centerRect 0.7,
-      False
-    ),
     ( "NSP_audio",
       "firefox -P clone2 --class NSP_audio --new-window \
       \-new-tab -url https://open.spotify.com/ \
@@ -762,17 +778,26 @@ nspDefs' =
   ]
 
 pnpDefs' :: [NSPDef] = [
-    ( "PNP_xmonad-log",
-        "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_xmonad-log "
-        ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"tail -f " ++ debugLogFile ++ "\\\"'\" "
-        ++ "$HOME/.config/alacritty/transparent.toml",
-        className =? "PNP_xmonad-log",
+    ( "PNP_log",
+        (
+          if debug then
+          "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_log "
+            ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"tail -f " ++ debugLogFile ++ "\\\"'\" "
+          else "tmux-pane-view --class=PNP_log --alacritty_theme="
+        ) ++ "$HOME/.config/alacritty/transparent.toml",
+        className =? "PNP_log",
         Left $ centerRect 0.7,
         False
     ),
     ( "PNP_whiteboard",
       "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
       className =? "PNP_whiteboard",
+      Left $ centerRect 0.7,
+      False
+    ),
+    ( "PNP_meeting",
+      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=PNP_meeting --new-window --new-tab 'https://us04web.zoom.us/myhome' --start-fullscreen",
+      className =? "PNP_meeting",
       Left $ centerRect 0.7,
       False
     ),
@@ -787,10 +812,10 @@ pnpDefs' :: [NSPDef] = [
 nspDefs :: [NSPDef] = nspDefs' ++ pnpDefs'
 
 mapToNSP :: [NSPDef] -> [NamedScratchpad]
-mapToNSP = map (\(cls, cmd, query, manage, _) -> 
+mapToNSP = map (\(cls, cmd, query, manage, _) ->
   NS cls cmd query (
     -- TODO this is a bandaid. Will have to refactor, because NSPDefs assume the initial window state is equivalent to the maximized state
-    if cls == "PNP_xmonad-log" then customFloating (bottomRightCornerRect 0.2 0) <+> doF W.focusDown
+    if cls == "PNP_log" then customFloating (bottomRightCornerRect 0.2 0) <+> doF W.focusDown
 
     else case manage of
       Left rect -> customFloating rect
@@ -801,11 +826,13 @@ mapToNSP = map (\(cls, cmd, query, manage, _) ->
 nsps :: [NamedScratchpad]
 nsps = mapToNSP nspDefs
 
-openNSP :: String -> X ()
-openNSP = namedScratchpadAction nsps
-
 openNSPOnScreen :: String -> ScreenId -> X ()
-openNSPOnScreen name scn = doOnScreen scn $ namedScratchpadAction nsps name
+openNSPOnScreen name scn = do
+  ensureNoPNPFocus
+  openNSPOrPNPOnScreen name scn
+
+openNSPOrPNPOnScreen :: String -> ScreenId -> X ()
+openNSPOrPNPOnScreen name scn = doOnScreen scn (namedScratchpadAction nsps name) 
 
 hideNSP :: String -> X ()
 hideNSP nsp = do
@@ -815,9 +842,10 @@ hideNSP nsp = do
     windows $ W.shiftWin "NSP" $ fromJust win
 
 hideAllNSPs :: X ()
-hideAllNSPs = do
-  hidePNPs
-  mapM_ (\(n, _, _, _, _) -> hideNSP n) nspDefs'
+hideAllNSPs = mapM_ (\(n, _, _, _, _) -> hideNSP n) nspDefs'
+
+hideAllNSPsAndPNPs :: X ()
+hideAllNSPsAndPNPs = hidePNPs >> hideAllNSPs
 
 ------------------------------------------------------------------------
 -- picture-in-picture binds:
@@ -856,28 +884,37 @@ instance ExtensionClass HiddenPNPWindows where
 
 hidePNPs :: X ()
 hidePNPs = do
-  winsToHide <- findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
-  nspNames <- mapM (runQuery className) winsToHide
-  mapM_ hideNSP nspNames
-  XS.put $ HiddenPNPWindows winsToHide
+  winsToHide <- getPNPs
+  unless (null winsToHide) $ do
+    nspNames <- mapM (runQuery className) winsToHide
+    mapM_ hideNSP nspNames
+    XS.put $ HiddenPNPWindows winsToHide
 
 unhidePNPs :: X ()
 unhidePNPs = do
   HiddenPNPWindows hiddenWins <- XS.get
   nspNames <- mapM (runQuery className) hiddenWins
-  mapM_ (`openNSPOnScreen` 0) nspNames
+  mapM_ (`openNSPOrPNPOnScreen` 0) nspNames
   XS.put $ HiddenPNPWindows []
   fade <- getFadeOpacity <$> XS.get
-  when (fade <= 0.2) $ setFade 0.2
+  when (fade < defaultFadeOpacity) $ setFade defaultFadeOpacity
+
+togglePNPs = maintainFocus $
+  whenM ((/= "NSP") <$> getCurrentWorkspaceID) $ do
+    HiddenPNPWindows hiddenWins <- XS.get
+    if null hiddenWins then do
+        visibleWins <- getPNPs
+        if null visibleWins then greedyUnhidePNPs else hidePNPs
+    else unhidePNPs
 
 greedyUnhidePNPs :: X ()
 greedyUnhidePNPs = do
   HiddenPNPWindows hiddenWins <- XS.get
   nspNames <- mapM (runQuery className) hiddenWins
-  mapM_ (`openNSPOnScreen` 0) (if null nspNames then map (\(_, (n, _, _, _, _)) -> n) pnpDefs else nspNames)
+  mapM_ (`openNSPOrPNPOnScreen` 0) (if null nspNames then map (\(_, (n, _, _, _, _)) -> n) pnpDefs else nspNames)
   XS.put $ HiddenPNPWindows []
   fade <- getFadeOpacity <$> XS.get
-  when (fade <= 0.2) $ setFade 0.2
+  when (fade < defaultFadeOpacity) $ setFade defaultFadeOpacity
 
 pnpMaximize :: PnpDef -> X ()
 pnpMaximize pnpDef = do
@@ -894,23 +931,23 @@ pnpMaximize pnpDef = do
   where
     (i, (cls, cmd, _, manage, _)) = pnpDef
 
-ensureNoPNPFocus = do
-  ws <- gets windowset
-  let stack' = W.stack $ W.workspace $ W.current ws
-  when (isJust stack') $ do
-    let stack = fromJust stack'
-    let down = stack.down
-    toFocus <- filterM ( \w -> do
-                              cls <- runQuery className w
-                              return $ not $ "PNP_" `isPrefixOf` cls
-                        ) down
-    focus $ head toFocus
-
+ensureNoPNPFocus = withFocused $ \focused -> do
+  cls <- runQuery className focused
+  when ("PNP_" `isPrefixOf` cls) $ do
+    ws <- gets windowset
+    let stack' = W.stack $ W.workspace $ W.current ws
+    when (isJust stack') $ do
+      let stack = fromJust stack'
+      let down = stack.down
+      toFocus <- filterM ( \w -> do
+                                cls <- runQuery className w
+                                return $ not $ "PNP_" `isPrefixOf` cls
+                          ) down
+      focus $ head toFocus
 
 pnpMinimize :: Window -> PnpDef -> X ()
 pnpMinimize win (i,_) = do
   windows $ \ws -> W.float win (bottomRightCornerRect 0.2 i) ws
-
 
 pnpMinimizeAndReturnFocus :: Window -> Window -> PnpDef -> X ()
 pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
@@ -923,7 +960,7 @@ pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
     win' <- findWinOnActiveWorkspace (className =? cls)
     if isNothing win' then do
       hideNSP cls
-      openNSPOnScreen cls 0
+      openNSPOrPNPOnScreen cls 0
       win <- findWinOnActiveWorkspace (className =? cls)
       pnpMaximize pnpDef
     else do
@@ -941,7 +978,7 @@ pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
 
 pnpToggleVisibility :: PnpDef -> X ()
 pnpToggleVisibility pnpDef = withFocused $ \originallyFocused -> do
-    openNSPOnScreen name 0
+    openNSPOrPNPOnScreen name 0
     win' <- findWinOnActiveWorkspace (className =? name)
     when (isJust win') $ focus originallyFocused
   where
@@ -992,9 +1029,14 @@ getKeybindings conf =
           toggleVisibilityBind = (altMask+shiftMask, xK_o)
         },
       PnpBindParams
-        { name = "PNP_xmonad-log",
+        { name = "PNP_log",
           toggleMaximizationBind = (altMask, xK_bracketright),
           toggleVisibilityBind = (altMask+shiftMask, xK_bracketright)
+        },
+      PnpBindParams
+        { name = "PNP_meeting",
+          toggleMaximizationBind = (altMask, xK_z),
+          toggleVisibilityBind = (altMask+shiftMask, xK_z)
         }
     ]
     ++ ezWinBinds
@@ -1004,13 +1046,13 @@ getKeybindings conf =
           spawn "not-dotfiles code -n",
           Just $ defaultWinBindsParams {exact = True}
         ),
-        ( xK_e,
-          "tmux-pane-view",
-          do
-            windows $ focusScreen 0
-            spawn "tmux-pane-view",
-          Nothing
-        ),
+        -- ( xK_e,
+        --   "tmux-pane-view",
+        --   do
+        --     windows $ focusScreen 0
+        --     spawn "tmux-pane-view",
+        --   Nothing
+        -- ),
         ( xK_p,
           "firefox",
           spawn "firefox --new-window",
@@ -1028,7 +1070,6 @@ getKeybindings conf =
     -- NSPs:
     ++ ezNspBinds
       [
-        (xK_z, "NSP_meeting"),
         (xK_u, "NSP_obsidian"),
         (xK_e, "NSP_spotify"),
         (xK_r, "NSP_files"),
@@ -1068,16 +1109,19 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- NSPs:
          ((winMask, xK_minus), toggleOrView "NSP"),
-         ((altMask, xK_grave), hideAllNSPs),
-         ((altMask+controlMask, xK_grave), maintainFocus $
+         ((altMask, xK_grave),
             whenM ((/= "NSP") <$> getCurrentWorkspaceID) $ do
-              HiddenPNPWindows hiddenWins <- XS.get
-              if null hiddenWins then do
-                  visibleWins <- findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
-                  if null visibleWins then greedyUnhidePNPs else hidePNPs
-              else unhidePNPs
+              nspsToHide <- getNSPs
+              if not $ null nspsToHide then hideAllNSPs
+              else do
+                pnpsToHide <- getPNPs
+                -- toHide <- findWinsOnActiveWorkspace $ fmap (\cls -> any (`isPrefixOf` cls) ["PNP_", "NSP_"]) className
+                -- debugLog toHide
+                if null pnpsToHide then togglePNPs
+                else hideAllNSPsAndPNPs
           ),
-         ( (altMask, xK_Escape),
+         ((altMask+controlMask, xK_grave), togglePNPs),
+         ((altMask, xK_Escape),
            do
              ws <- gets windowset
              tmuxa2 <- GNP.getNextMatch (winQuery False False "NSP_tmuxa-2") GNP.Forward
@@ -1089,14 +1133,14 @@ getKeybindings conf =
          ( (altMask + controlMask, xK_Escape),
            do
              hideNSP "NSP_tmuxa-1"
-             openNSPOnScreen "NSP_tmuxa-2" 0
+             openNSPOrPNPOnScreen "NSP_tmuxa-2" 0
          ),
          ------------------------------------------------------------
          -- window fade:
-         ((altMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 0.1)),
-         ((altMask+shiftMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 10)),
-         ((altMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+0.1)),
-         ((altMask+shiftMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+10)),
+         ((altMask+shiftMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 0.1)),
+         ((altMask+controlMask, xF86XK_AudioLowerVolume), maintainFocus $ rotaryAdjustFade (subtract 10)),
+         ((altMask+shiftMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+0.1)),
+         ((altMask+controlMask, xF86XK_AudioRaiseVolume), maintainFocus $ rotaryAdjustFade (+10)),
          ------------------------------------------------------------
          -- volume:
          ---------- up/down
@@ -1135,10 +1179,11 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- apps
          ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
+         ((altMask+shiftMask+controlMask, xK_bracketright), spawn "toggle-picom-blur"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask+shiftMask, xK_a), searchDocs "haskell"),
-         ((altMask, xK_a), openNSPOnScreen "NSP_docs" 0),
+         ((altMask, xK_a), openNSPOrPNPOnScreen "NSP_docs" 0),
          ((altMask+controlMask, xK_u), spawn "spawn-with-name obsidian-alt obsidian \"obsidian \'obsidian://open?vault=mainmirror\'\" 2"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
         --  ( (altMask, xK_z),
