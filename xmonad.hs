@@ -5,7 +5,9 @@
 import Control.Monad
 import Data.List
 import Data.Map qualified as M
+import Data.Data (Typeable, cast)
 import Data.Maybe
+import Data.Either
 import Graphics.X11
 import Graphics.X11.ExtraTypes
 import System.Exit
@@ -39,9 +41,9 @@ import XMonad.Util.Run
 import XMonad.Util.SpawnOnce
 import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
-import XMonad.Layout.HiddenPatched
 import XMonad.Hooks.ManageHelpers
 import Data.Monoid (All(..))
+import GHC.Utils.Monad (whenM)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -111,8 +113,8 @@ centerRect s = center s s
   where
     center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
 
-cornerRect :: Rational -> Int -> W.RationalRect
-cornerRect s idx = W.RationalRect x y w h
+bottomRightCornerRect :: Rational -> Int -> W.RationalRect
+bottomRightCornerRect s idx = W.RationalRect x y w h
   where
     w = s
     h = s
@@ -122,9 +124,54 @@ cornerRect s idx = W.RationalRect x y w h
 maintainFocus :: X () -> X ()
 maintainFocus action = do
   ws <- gets windowset
-  let focused = W.focus <$> W.stack (W.workspace (W.current ws))
-  action
-  focus $ fromJust focused
+  let originallyFocused' = W.focus <$> W.stack (W.workspace (W.current ws))
+  if isJust originallyFocused'
+    then do
+      let originallyFocused = fromJust originallyFocused'
+      let ogWorkspace = W.findTag originallyFocused ws
+      action
+      ws <- gets windowset
+      let newWorkspace = W.findTag originallyFocused ws
+      when (ogWorkspace == newWorkspace) $ focus originallyFocused
+    else action
+
+bringToFront win ws =  W.focusWindow win $ W.insertUp win $ W.delete win ws
+
+findWinOnActiveWorkspace :: Query Bool -> X (Maybe Window)
+findWinOnActiveWorkspace q = do
+  ws <- gets windowset
+  let W.Workspace _ _ stack = W.workspace $ W.current ws
+  let curWorkspaceWindowList = W.integrate' stack
+  listToMaybe <$> filterM (runQuery q) curWorkspaceWindowList
+
+findWinsOnActiveWorkspace :: Query Bool -> X [Window]
+findWinsOnActiveWorkspace q = do
+  ws <- gets windowset
+  let W.Workspace _ _ stack = W.workspace $ W.current ws
+  let curWorkspaceWindowList = W.integrate' stack
+  filterM (runQuery q) curWorkspaceWindowList
+
+findWinOnAnyWorkspace :: Query Bool -> X (Maybe Window)
+findWinOnAnyWorkspace q = GNP.getNextMatch q GNP.Forward
+
+findWinsOnAnyWorkspace :: Query Bool -> X [Window]
+findWinsOnAnyWorkspace q = do
+  ws <- gets windowset
+  let allWindows = W.allWindows ws
+  filterM (runQuery q) allWindows
+
+printWorkspaceState = do
+  ws <- gets windowset
+  debugLog "\n========================"
+  let W.Workspace _ _ stack = W.workspace $ W.current ws
+  let curWorkspaceWindowList = W.integrate' stack
+  debugLog stack
+  debugLog curWorkspaceWindowList
+
+getCurrentWorkspaceID :: X String
+getCurrentWorkspaceID = do
+  ws <- gets windowset
+  return $ W.tag $ W.workspace $ W.current ws
 
 ------------------------------------------------------------------------
 -- prompt:
@@ -151,16 +198,15 @@ confirm = confirmPrompt myPromptConfig
 ------------------------------------------------------------------------
 -- layout:
 myLayout =
-  hiddenWindows $
-    ifWider
-      2561
-      (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
-      (tiled ||| Mirror tiled ||| Full ||| Grid)
-    where
-      tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
-      nmaster = 1 -- The default number of windows in the master pane
-      ratio = 3 / 5 -- Default proportion of screen occupied by master pane
-      delta = 3 / 100 -- Percent of screen to increment by when resizing panes
+  ifWider
+    2561
+    (ThreeColMid 1 (3 / 100) (1 / 2) ||| Full)
+    (tiled ||| Mirror tiled ||| Full ||| Grid)
+  where
+    tiled = Tall nmaster delta ratio -- default partitions the screen into two panes
+    nmaster = 1 -- The default number of windows in the master pane
+    ratio = 3 / 5 -- Default proportion of screen occupied by master pane
+    delta = 3 / 100 -- Percent of screen to increment by when resizing panes
 
 ------------------------------------------------------------------------
 -- mouse bindings:
@@ -179,7 +225,6 @@ myStartupHook = do
   sendMessage (SetStruts [] [U,L])
   spawnOnce "nitrogen --restore &"
   mapM_ cycleAllWorkspacesOnScreen [0 .. (numScreens - 1)]
-  hideAllWindowsWithClassPrefix "pnp_"
   windows $ focusScreen 0
   where
     cycleAllWorkspacesOnScreen i = do
@@ -218,7 +263,7 @@ myManageHook =
 resizeHook :: Event -> X All
 resizeHook (ConfigureEvent { ev_window = w }) = do
     className <- runQuery className w
-    when (className == "pnp_whiteboard") $ spawn "lock-tablet-area pnp_whiteboard \"UGTABLET M908 Pen stylus\" \"UGTABLET M908 Pen eraser\""
+    when (className == "PNP_whiteboard") $ spawn "lock-tablet-area PNP_whiteboard \"UGTABLET M908 Pen stylus\" \"UGTABLET M908 Pen eraser\""
     return (All True)
 resizeHook _ = return (All True)
 
@@ -235,7 +280,7 @@ myLogHook xmproc = do
   refocusLastLogHook
   fadeOutLogHook
     (fadeIf
-      ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp" <||> (("pnp_" `isPrefixOf`) <$> className)))
+      ((&&) <$> isUnfocused <*> (className =? "Com.github.xournalpp.xournalpp" <||> (("PNP_" `isPrefixOf`) <$> className)))
       0.2
     )
   nsHideOnFocusLoss
@@ -264,7 +309,7 @@ pnpTrackFocusChange = do
     case lastFocused of
       Just lw -> do
         cls <- runQuery className lw
-        when ("pnp_" `isPrefixOf` cls) $
+        when ("PNP_" `isPrefixOf` cls) $
           let pnpDef = getPnpDefByClassName cls
            in pnpMinimize lw pnpDef
       Nothing -> return ()
@@ -472,12 +517,12 @@ type NSPDef =
   ( String, -- scratchpad name
     String, -- command used to run application
     Query Bool, -- query to find already running application
-    ManageHook, -- manage hook called for application window, use it to define the placement.
+    Either W.RationalRect ManageHook,
     Bool -- hide on focus loss
   )
 
-nspDefs :: [NSPDef]
-nspDefs =
+nspDefs' :: [NSPDef]
+nspDefs' =
   [ ( "NSP_assistant",
       "firefox -P clone1 --class NSP_assistant --new-window \
       \-new-tab -url https://chat.openai.com/ \
@@ -491,7 +536,7 @@ nspDefs =
       \-new-tab -url https://chat.openai.com/ \
       \-new-tab -url https://chat.openai.com/",
       className =? "NSP_assistant",
-      customFloating $ centerRect 0.8,
+      Left $ centerRect 0.8,
       True
     ),
     ( "NSP_docs",
@@ -507,7 +552,7 @@ nspDefs =
       \--new-tab chrome://new-tab-page \
       \--new-tab chrome://new-tab-page",
       className =? "NSP_docs",
-      customFloating $ centerRect 0.8,
+      Left $ centerRect 0.8,
       True
     ),
     ( "NSP_browse",
@@ -515,25 +560,25 @@ nspDefs =
       className =? "NSP_browse",
       -- "chromium-browser",
       -- className =? "Chromium-browser",
-      nonFloating,
+      Right nonFloating,
       False
     ),
     ( "NSP_files",
       "nautilus",
       className =? "org.gnome.Nautilus",
-      nonFloating,
+      Right nonFloating,
       False
     ),
     ( "NSP_discord",
       "discord",
       className =? "discord",
-      nonFloating,
+      Right nonFloating,
       False
     ),
     ( "NSP_obsidian",
       "spawn-with-name NSP_obsidian obsidian 'obsidian \"obsidian://open?vault=main\"' 2",
       className =? "NSP_obsidian",
-      customFloating $ centerRect 0.95,
+      Left $ centerRect 0.95,
       False
     ),
     ( "NSP_homelab",
@@ -545,37 +590,37 @@ nspDefs =
       \-new-tab -url https://dash.cloudflare.com/05ec19eeeec296ddd6cfd2bda7df1384/kylegrimsrudma.nz/dns/records",
       className
         =? "NSP_homelab",
-      nonFloating,
+      Right $ nonFloating,
       True
     ),
     ( "NSP_tmuxa-1",
       "unique-term NSP_tmuxa-1 \"tmuxa tmuxa-1 $HOME\"",
       className =? "NSP_tmuxa-1",
-      customFloating $ centerRect 0.9,
+      Left $ centerRect 0.9,
       False
     ),
     ( "NSP_tmuxa-2",
       "unique-term NSP_tmuxa-2 \"tmuxa tmuxa-2 $HOME\" " ++ " /home/kyle/.config/alacritty/alacritty2.toml",
       className =? "NSP_tmuxa-2",
-      customFloating $ centerRect 0.9,
+      Left $ centerRect 0.9,
       False
     ),
     ( "NSP_tmuxa-3",
       "unique-term NSP_tmuxa-3 \"zsh\" " ++ " /home/kyle/.config/alacritty/alacritty3.toml",
       className =? "NSP_tmuxa-3",
-      customFloating $ centerRect 0.4,
+      Left $ centerRect 0.4,
       False
     ),
     ( "NSP_testing",
       "",
       className =? "Cypress",
-      customFloating $ centerRect 0.7,
+      Left $ centerRect 0.7,
       False
     ),
     ( "NSP_meeting",
       "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=NSP_meeting --new-window --app='https://us04web.zoom.us/myhome' --start-fullscreen",
       className =? "NSP_meeting",
-      customFloating $ centerRect 0.7,
+      Left $ centerRect 0.7,
       False
     ),
     ( "NSP_audio",
@@ -583,13 +628,13 @@ nspDefs =
       \-new-tab -url https://open.spotify.com/ \
       \-new-tab -url https://noises.online/",
       className =? "NSP_audio",
-      customFloating $ centerRect 0.7,
+      Left $ centerRect 0.7,
       False
     ),
     ( "NSP_spotify",
       "spotify",
       className =? "Spotify",
-      customFloating $ centerRect 0.7,
+      Left $ centerRect 0.7,
       False
     ),
     -- ( "NSP_project",
@@ -600,20 +645,47 @@ nspDefs =
     --   -- className =? "Google-chrome",
     --   -- className =? "partmin-ui",
     --   className =? "Google-chrome",
-    --   nonFloating,
+    --   Right $ nonFloating,
     --   True
     -- ),
     ( "NSP_hubstaff",
       "/home/kyle/Hubstaff/HubstaffClient.bin.x86_64",
       className =? "Netsoft-com.netsoft.hubstaff",
-      customFloating $ centerRect 0.3,
+      Left $ centerRect 0.3,
       -- nonFloating,
       True
     )
   ]
 
+pnpDefs' :: [NSPDef] = [
+    ( "PNP_xmonad-log",
+      "unique-term PNP_xmonad-log \"zsh -i -c 'tail -f " ++ debugLogFile ++ "'; zsh\" $HOME/.config/alacritty/transparent.toml",
+      className =? "PNP_xmonad-log",
+      Left $ centerRect 0.7,
+      False
+    ),
+    ( "PNP_whiteboard",
+      "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
+      className =? "PNP_whiteboard",
+      Left $ centerRect 0.7,
+      False
+    ),
+    ( "PNP_proj",
+      "multi-instance-chromium-browser --class=PNP_proj --new-window --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222",
+      className =? "PNP_proj",
+      Left $ centerRect 0.7,
+      False
+    )
+  ]
+
+nspDefs :: [NSPDef] = nspDefs' ++ pnpDefs'
+
 mapToNSP :: [NSPDef] -> [NamedScratchpad]
-mapToNSP = map (\(n, tn, cn, cf, _) -> NS n tn cn cf)
+mapToNSP = map (\(name, cmd, query, manage, _) -> NS name cmd query (
+  case manage of
+    Left rect -> customFloating rect
+    Right manageHook -> manageHook
+  ))
 
 nsps :: [NamedScratchpad]
 nsps = mapToNSP nspDefs
@@ -632,36 +704,19 @@ hideNSP nsp = do
     windows $ W.shiftWin "NSP" $ fromJust win
 
 hideAllNSPs :: X ()
-hideAllNSPs =
-  mapM_
-    ( \(_, _, q, _, _) -> do
-        win <- GNP.getNextMatch q GNP.Forward
-        when (isJust win) $ do
-          windows $ W.shiftWin "NSP" $ fromJust win
-    )
-    nspDefs
+hideAllNSPs = do
+  hidePNPs
+  mapM_ (\(n, _, _, _, _) -> hideNSP n) nspDefs'
 
 ------------------------------------------------------------------------
 -- picture-in-picture binds:
 type PnpDef' = (String, String)
 
-pnpDefs' :: [PnpDef']
-pnpDefs' = [
-    (
-      "pnp_whiteboard",
-      "firefox -P clone5 --class pnp_whiteboard --new-window https://whimsical.com"
-    ),
-    (
-      "pnp_proj",
-      "multi-instance-chromium-browser --class=pnp_proj --new-window --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222"
-    )
-  ]
-
-type PnpDef = (Int, String, String)
-pnpDefs = zipWith (\i (n, c) -> (i, n, c)) [0..] pnpDefs'
+type PnpDef = (Int, NSPDef)
+pnpDefs = zip [0..] pnpDefs'
 
 getPnpDefByClassName :: String -> PnpDef
-getPnpDefByClassName cls = fromJust $ find (\(_, n, _) -> n == cls) pnpDefs
+getPnpDefByClassName cls = fromJust $ find (\(_, (n, _, _, _, _)) -> n == cls) pnpDefs
 
 data PnpBindParams = PnpBindParams
   {
@@ -674,68 +729,110 @@ ezPnpBinds = concatMap createBinds
   where
     getWin cls = GNP.getNextMatch (className =? cls) GNP.Forward
     createBinds PnpBindParams {name, toggleMaximizationBind, toggleVisibilityBind} = [
-          (toggleMaximizationBind, do
-              win <- getWin name
-              if isNothing win then pnpSpawnMaximized pnpDef else pnpToggleMaximization pnpDef
-          ),
-          (toggleVisibilityBind, do
-              win <- getWin name
-              if isNothing win then pnpSpawnMinimized pnpDef else hideAllWindowsWithClassPrefix "pnp_"
-          )
+          (toggleMaximizationBind, pnpToggleMaximization pnpDef),
+            (toggleVisibilityBind, pnpToggleVisibility pnpDef)
         ]
       where
         pnpDef = getPnpDefByClassName name
-        (index, _, cmd) = pnpDef
 
 ------------------------------------------------------------------------
 -- picture-in-picture utils:
 
-pnpMaximizeAndFocus :: Window -> X ()
-pnpMaximizeAndFocus win = do
-  windows $ \ws -> W.focusWindow win $ W.float win (centerRect 0.7) $ W.insertUp win $ W.delete win ws
+newtype HiddenPNPWindows = HiddenPNPWindows [Window]
+  deriving (Typeable, Read, Show)
+
+instance ExtensionClass HiddenPNPWindows where
+  initialValue = HiddenPNPWindows []
+  extensionType = PersistentExtension
+
+hidePNPs :: X ()
+hidePNPs = do
+  winsToHide <- findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
+  nspNames <- mapM (runQuery className) winsToHide
+  mapM_ hideNSP nspNames
+  XS.put $ HiddenPNPWindows winsToHide
+
+unhidePNPs :: X ()
+unhidePNPs = do
+  HiddenPNPWindows hiddenWins <- XS.get
+  nspNames <- mapM (runQuery className) hiddenWins
+  mapM_ (`openNSPOnScreen` 0) nspNames
+  XS.put $ HiddenPNPWindows []
+
+greedyUnhidePNPs :: X ()
+greedyUnhidePNPs = do
+  HiddenPNPWindows hiddenWins <- XS.get
+  nspNames <- mapM (runQuery className) hiddenWins
+  mapM_ (`openNSPOnScreen` 0) (if null nspNames then map (\(_, (n, _, _, _, _)) -> n) pnpDefs else nspNames)
+  XS.put $ HiddenPNPWindows []
+
+pnpMaximize :: PnpDef -> X ()
+pnpMaximize pnpDef = do
+  unhidePNPs
+  win' <- findWinOnAnyWorkspace (className =? cls)
+  if isJust win' then do
+    let win = fromJust win'
+    windows $ either
+        (W.float win)
+        (const $ W.sink win) -- TODO figure out how to use manageHook on just the targeted window here
+        manage
+      . bringToFront win
+  else persistentLog Error ("pnpMaximize: window not found: " ++ cls)
+  where
+    (i, (cls, cmd, _, manage, _)) = pnpDef
+
 
 pnpMinimize :: Window -> PnpDef -> X ()
-pnpMinimize win (i,_,_) = do
-  windows $ \ws -> W.float win (cornerRect 0.2 i) ws
+pnpMinimize win (i,_) = do
+  windows $ \ws -> W.float win (bottomRightCornerRect 0.2 i) ws
+
 
 pnpMinimizeAndReturnFocus :: Window -> Window -> PnpDef -> X ()
 pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
   pnpMinimize win pnpDef
-  if originallyFocused /= win then do
-    focus originallyFocused
-  else windows W.focusDown
+  if originallyFocused /= win then focus originallyFocused
+  else do
+    ws <- gets windowset
+    let stack' = W.stack $ W.workspace $ W.current ws
+    when (isJust stack') $ do
+      let stack = fromJust stack'
+      let down = stack.down
+      toFocus <- filterM ( \w -> do
+                                cls <- runQuery className w
+                                return $ not $ "PNP_" `isPrefixOf` cls
+                          ) down
+      focus $ head toFocus
+
 
 pnpToggleMaximization :: PnpDef -> X ()
 pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
-    win' <- GNP.getNextMatch (className =? cls) GNP.Forward
-    when (isNothing win') $ return mempty
-    let win = fromJust win'
-    ws <- gets windowset
-    let isFloating = M.member win (W.floating ws)
-    if isFloating then do
-      case M.lookup win (W.floating ws) of
-        Just (W.RationalRect x y w h) -> do
-          if w < 0.4 then pnpMaximizeAndFocus win
-          else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
-    else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
+    win' <- findWinOnActiveWorkspace (className =? cls)
+    if isNothing win' then do
+      hideNSP cls
+      openNSPOnScreen cls 0
+      win <- findWinOnActiveWorkspace (className =? cls)
+      pnpMaximize pnpDef
+    else do
+      let win = fromJust win'
+      ws <- gets windowset
+      let isFloating = M.member win (W.floating ws)
+      if isFloating then do
+        case M.lookup win (W.floating ws) of
+          Just (W.RationalRect x y w h) -> do
+            if w < 0.4 then pnpMaximize pnpDef
+            else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
+      else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
   where
-    (i,cls,_) = pnpDef
+    (i, (cls, _, _, _, _)) = pnpDef
 
-pnpSpawnMaximized :: PnpDef -> X ()
-pnpSpawnMaximized pnpDef = do
-  popWindowWithClass cls
-  win <- GNP.getNextMatch (className =? cls) GNP.Forward
-  maybe (spawn cmd) pnpMaximizeAndFocus win
+pnpToggleVisibility :: PnpDef -> X ()
+pnpToggleVisibility pnpDef = withFocused $ \originallyFocused -> do
+    openNSPOnScreen name 0
+    win' <- findWinOnActiveWorkspace (className =? name)
+    when (isJust win') $ focus originallyFocused
   where
-    (i,cls,cmd) = pnpDef
+    (i, (name, _, _, _, _)) = pnpDef
 
-pnpSpawnMinimized :: PnpDef -> X ()
-pnpSpawnMinimized pnpDef = maintainFocus $ do
-  popWindowWithClass cls
-  win <- GNP.getNextMatch (className =? cls) GNP.Forward
-  if isNothing win then spawn cmd else pnpMinimize (fromJust win) pnpDef
-  where
-    (i,cls,cmd) = pnpDef
 
 ------------------------------------------------------------------------
 -- keybindings:
@@ -771,14 +868,19 @@ getKeybindings conf =
     ]
     ++ ezPnpBinds [
       PnpBindParams
-        { name = "pnp_whiteboard",
+        { name = "PNP_whiteboard",
           toggleMaximizationBind = (altMask, xK_i),
           toggleVisibilityBind = (altMask+shiftMask, xK_i)
         },
       PnpBindParams
-        { name = "pnp_proj",
+        { name = "PNP_proj",
           toggleMaximizationBind = (altMask+controlMask, xK_o),
           toggleVisibilityBind = (altMask+shiftMask, xK_o)
+        },
+      PnpBindParams
+        { name = "PNP_xmonad-log",
+          toggleMaximizationBind = (altMask, xK_bracketright),
+          toggleVisibilityBind = (altMask+shiftMask, xK_bracketright)
         }
     ]
     ++ ezWinBinds
@@ -852,12 +954,14 @@ getKeybindings conf =
          ---------------------------------------------------------------
          -- NSPs:
          ((winMask, xK_minus), toggleOrView "NSP"),
-         ((altMask, xK_grave), do
-            hideAllNSPs
-            hideAllWindowsWithClassPrefix "pnp_"
-         ),
-         ((altMask+controlMask, xK_grave), maintainFocus $ do
-            toggleAllWindowsWithClassPrefix "pnp_"
+         ((altMask, xK_grave), hideAllNSPs),
+         ((altMask+controlMask, xK_grave), maintainFocus $
+            whenM ((/= "NSP") <$> getCurrentWorkspaceID) $ do
+              HiddenPNPWindows hiddenWins <- XS.get
+              if null hiddenWins then do
+                  visibleWins <- findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
+                  if null visibleWins then greedyUnhidePNPs else hidePNPs
+              else unhidePNPs
           ),
          ( (altMask, xK_Escape),
            do
@@ -910,6 +1014,7 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
+         ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask, xK_a), searchDocs "tailwindcss"),
