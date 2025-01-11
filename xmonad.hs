@@ -787,11 +787,16 @@ pnpDefs' :: [NSPDef] = [
 nspDefs :: [NSPDef] = nspDefs' ++ pnpDefs'
 
 mapToNSP :: [NSPDef] -> [NamedScratchpad]
-mapToNSP = map (\(name, cmd, query, manage, _) -> NS name cmd query (
-  case manage of
-    Left rect -> customFloating rect
-    Right manageHook -> manageHook
-  ))
+mapToNSP = map (\(cls, cmd, query, manage, _) -> 
+  NS cls cmd query (
+    -- TODO this is a bandaid. Will have to refactor, because NSPDefs assume the initial window state is equivalent to the maximized state
+    if cls == "PNP_xmonad-log" then customFloating (bottomRightCornerRect 0.2 0) <+> doF W.focusDown
+
+    else case manage of
+      Left rect -> customFloating rect
+      Right manageHook -> manageHook
+    )
+  )
 
 nsps :: [NamedScratchpad]
 nsps = mapToNSP nspDefs
@@ -816,8 +821,6 @@ hideAllNSPs = do
 
 ------------------------------------------------------------------------
 -- picture-in-picture binds:
-type PnpDef' = (String, String)
-
 type PnpDef = (Int, NSPDef)
 pnpDefs = zip [0..] pnpDefs'
 
@@ -891,6 +894,18 @@ pnpMaximize pnpDef = do
   where
     (i, (cls, cmd, _, manage, _)) = pnpDef
 
+ensureNoPNPFocus = do
+  ws <- gets windowset
+  let stack' = W.stack $ W.workspace $ W.current ws
+  when (isJust stack') $ do
+    let stack = fromJust stack'
+    let down = stack.down
+    toFocus <- filterM ( \w -> do
+                              cls <- runQuery className w
+                              return $ not $ "PNP_" `isPrefixOf` cls
+                        ) down
+    focus $ head toFocus
+
 
 pnpMinimize :: Window -> PnpDef -> X ()
 pnpMinimize win (i,_) = do
@@ -901,18 +916,7 @@ pnpMinimizeAndReturnFocus :: Window -> Window -> PnpDef -> X ()
 pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
   pnpMinimize win pnpDef
   if originallyFocused /= win then focus originallyFocused
-  else do
-    ws <- gets windowset
-    let stack' = W.stack $ W.workspace $ W.current ws
-    when (isJust stack') $ do
-      let stack = fromJust stack'
-      let down = stack.down
-      toFocus <- filterM ( \w -> do
-                                cls <- runQuery className w
-                                return $ not $ "PNP_" `isPrefixOf` cls
-                          ) down
-      focus $ head toFocus
-
+  else ensureNoPNPFocus
 
 pnpToggleMaximization :: PnpDef -> X ()
 pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
