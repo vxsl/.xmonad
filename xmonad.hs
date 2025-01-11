@@ -59,10 +59,28 @@ myWorkspaces :: [String]
 myWorkspaces = withScreens numScreens ([show n | n <- [1 .. numWorkspacesPerScreen]])
 
 ------------------------------------------------------------------------
+-- logging:
+debugLogFile="/home/kyle/.xmonad-debug-log"
+persistentLogFile="/home/kyle/.xmonad-persistent-log"
+
+logToFile :: String -> (Show a, Typeable a) => a -> X ()
+logToFile path str =
+  let output = case cast str of
+                 Just s -> s            -- If `str` is a `String`, use it directly
+                 Nothing -> show str    -- Otherwise, use `show`
+  in io $ appendFile path (output ++ "\n")
+
+debugLog msg = logToFile debugLogFile msg
+
+data LogLevel = Debug | Info | Warning | Error
+  deriving (Show, Eq)
+
+persistentLog lvl msg = do
+  logToFile persistentLogFile $ "[" ++ show lvl ++ "]\t" ++ msg
+  logToFile debugLogFile msg
+
+------------------------------------------------------------------------
 -- misc. helpers:
-debugLog :: Show a => a -> X ()
-debugLog str =
-  io $ appendFile "/home/kyle/.xmonad-debug-log" $ show str ++ "\n"
 
 compareNumbers :: String -> String -> Ordering
 compareNumbers a b =
