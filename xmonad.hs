@@ -644,20 +644,20 @@ nspDefs' =
       True
     ),
     ( "NSP_docs",
-      "google-chrome-unstable --class=NSP_docs --new-window \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page \
-      \--new-tab chrome://new-tab-page",
+      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone1 --class=NSP_docs --new-window \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com \
+      \--new-tab google.com",
       className =? "NSP_docs",
       Left $ centerRect 0.8,
-      True
+      False
     ),
     ( "NSP_browse",
       "firefox -P clone3 --class NSP_browse",
@@ -1137,7 +1137,8 @@ getKeybindings conf =
          ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
-         ((altMask, xK_a), searchDocs "tailwindcss"),
+         ((altMask+shiftMask, xK_a), searchDocs "haskell"),
+         ((altMask, xK_a), openNSPOnScreen "NSP_docs" 0),
          ((altMask+controlMask, xK_u), spawn "spawn-with-name obsidian-alt obsidian \"obsidian \'obsidian://open?vault=mainmirror\'\" 2"),
          ((winMask + shiftMask, xK_s), spawn "flameshot gui &"),
         --  ( (altMask, xK_z),
