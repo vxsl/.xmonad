@@ -4,6 +4,7 @@
 
 import Control.Monad
 import Data.List
+import Data.Set qualified as Set
 import Data.Map qualified as M
 import Data.Data (Typeable, cast)
 import Data.Maybe
@@ -50,6 +51,7 @@ import System.Directory (removeFile, renameFile, doesFileExist)
 import Numeric
 import Data.Ratio
 import GHC.Prelude (Fractional(fromRational))
+import XMonad.Hooks.ManageHelpers (doFocus)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -121,13 +123,24 @@ centerRect s = center s s
   where
     center w h = W.RationalRect ((1 - w) / 2) ((1 - h) / 2) w h
 
-bottomRightCornerRect :: Rational -> Int -> W.RationalRect
-bottomRightCornerRect s idx = W.RationalRect x y w h
-  where
-    w = s
-    h = s
-    x = 1 - w
-    y = 1 - h - (fromIntegral idx * h)
+
+data Corner = TopLeft | TopRight | BottomLeft | BottomRight
+  deriving (Show, Eq)
+
+cornerRect :: Int -> Rational -> Rational -> Corner -> W.RationalRect
+cornerRect i w h BottomRight = W.RationalRect (1 - w) (1 - h - (fromIntegral i * h)) w h
+cornerRect i w h BottomLeft = W.RationalRect 0 (1 - h - (fromIntegral i * h)) w h
+cornerRect i w h TopRight = W.RationalRect (1 - w) (fromIntegral i * h) w h
+cornerRect i w h TopLeft = W.RationalRect 0 (fromIntegral i * h) w h
+
+
+-- bottomRightCornerRect :: Rational -> Int -> W.RationalRect
+-- bottomRightCornerRect s idx = W.RationalRect x y w h
+--   where
+--     w = s
+--     h = s
+--     x = 1 - w
+--     y = 1 - h - (fromIntegral idx * h)
 
 maintainFocus :: X () -> X ()
 maintainFocus action = do
@@ -143,7 +156,18 @@ maintainFocus action = do
       when (ogWorkspace == newWorkspace) $ focus originallyFocused
     else action
 
-bringToFront win ws =  W.focusWindow win $ W.insertUp win $ W.delete win ws
+bringToFront win ws = do
+  let stack = W.stack $ W.workspace $ W.current ws
+  let stack' = W.integrate $ fromJust stack
+  let stack'' = W.Stack { W.focus = win, W.up = [], W.down = filter (/= win) stack' }
+  ws {
+          W.current = (W.current ws) {
+            W.workspace = (W.workspace $ W.current ws) {
+              W.stack = Just stack''
+            }
+          }
+        }
+
 
 findWinOnActiveWorkspace :: Query Bool -> X (Maybe Window)
 findWinOnActiveWorkspace q = do
@@ -270,9 +294,11 @@ myStartupHook = do
   windows $ focusScreen 0
   setFade defaultFadeOpacity
 
+  debugLog pnpMinimizationRectsMap
+
   when debug $ do
-    let pnpDef = getPnpDefByClassName "PNP_log"
-    let (_, (cls, cmd, _, _, _)) = pnpDef
+    let pnpDef = getPNPDefByClassName "PNP_log"
+    let ((cls, cmd, _, _, _),_,_,_,_) = pnpDef
 
     spawn $ "xdotool search --classname " ++ cls ++ " windowclose"
     liftIO $ sleep 1
@@ -329,7 +355,8 @@ myManageHook =
       className =? "Org.gnome.Nautilus" --> doFloat,
       className =? "Xmessage" --> doFloat,
       title =? "Picture-in-Picture" --> doFloat,
-      title =? "Profile error occurred" --> doFloat,
+      -- title =? "Profile error occurred" --> doIgnore >> doFocus >> doFloatAt (-10000) (-10000),
+      title =? "Profile error occurred" --> doHideIgnore,
       appName =? "code-insiders-url-handler (remote-debug-profile)" --> doShift "2_1",
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
@@ -361,7 +388,7 @@ summarizeWorkspaceStateEventHook _ = do
   return (All True)
 
 myHandleEventHook =
-  -- summarizeWorkspaceStateEventHook .
+  summarizeWorkspaceStateEventHook .
   resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
 
 
@@ -403,7 +430,7 @@ myLogHook xmproc = do
       fade
     )
   nsHideOnFocusLoss
-    (mapToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
+    (mapNSPDefToNSP $ filter (\(_, _, _, _, hideOnFocusLoss) -> hideOnFocusLoss) nspDefs)
   dynamicLogWithPP
     def
       { ppOutput = hPutStrLn xmproc,
@@ -429,7 +456,7 @@ pnpTrackFocusChange = do
       Just lw -> do
         cls <- runQuery className lw
         when ("PNP_" `isPrefixOf` cls) $
-          let pnpDef = getPnpDefByClassName cls
+          let pnpDef = getPNPDefByClassName cls
            in pnpMinimize lw pnpDef
       Nothing -> return ()
 
@@ -489,11 +516,23 @@ type AbbreviatedNspBindsParams = (KeySym, String)
 
 nspBinds :: NspBindsParams -> [((KeyMask, KeySym), X ())]
 nspBinds NspBindsParams {keySym, nspName} =
-  [ ((altMask, keySym), openNSPOrPNPOnScreen nspName 0),
+  [ 
+    ((altMask, keySym), openNSPOnScreen nspName 0
+    -- do
+    --   openNSPOrPNPOnScreen nspName 0
+    --   win <- findWinOnActiveWorkspace $ className =? nspName
+    --   debugLog "hee"
+    --   debugLog win
+    --   if isJust win then windows $ bringToFront (fromJust win)
+    --   else ensureNoPNPFocus
+    ),
     ( (altMask + shiftMask, keySym),
       do
         hideNSP nspName
         openNSPOrPNPOnScreen nspName 0
+        -- win <- findWinOnActiveWorkspace $ className =? nspName
+        -- debugLog win
+        -- when (isJust win) $ windows $ bringToFront (fromJust win)
         -- resetFocusedNSP
     )
   ]
@@ -641,6 +680,15 @@ type NSPDef =
     Bool -- hide on focus loss
   )
 
+type PNPDef = (
+    NSPDef,
+    -- Either W.RationalRect ManageHook, -- minimized state
+    Corner,
+    Rational, -- width
+    Rational, -- height
+    Bool -- start minimized
+  )
+
 getPNPs :: X [Window]
 getPNPs = findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
 
@@ -704,7 +752,7 @@ nspDefs' =
     ( "NSP_obsidian",
       "spawn-with-name NSP_obsidian obsidian 'obsidian \"obsidian://open?vault=main\"' 2",
       className =? "NSP_obsidian",
-      Left $ centerRect 0.95,
+      Left $ centerRect 0.8,
       False
     ),
     ( "NSP_homelab",
@@ -777,8 +825,9 @@ nspDefs' =
     )
   ]
 
-pnpDefs' :: [NSPDef] = [
-    ( "PNP_log",
+pnpDefs' :: [PNPDef] = [
+    ( (
+        "PNP_log",
         (
           if debug then
           "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_log "
@@ -788,51 +837,121 @@ pnpDefs' :: [NSPDef] = [
         className =? "PNP_log",
         Left $ centerRect 0.7,
         False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
+      True
     ),
-    ( "PNP_whiteboard",
-      "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
-      className =? "PNP_whiteboard",
-      Left $ centerRect 0.7,
+    (
+
+      ( "PNP_whiteboard",
+        "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
+        className =? "PNP_whiteboard",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
       False
     ),
-    ( "PNP_meeting",
-      "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=PNP_meeting --new-window --new-tab 'https://us04web.zoom.us/myhome' --start-fullscreen",
-      className =? "PNP_meeting",
-      Left $ centerRect 0.7,
+    (
+      ( "PNP_meeting",
+        "chromium-browser --user-data-dir=/home/kyle/.config/chromium/DefaultClone2 --class=PNP_meeting --new-window --new-tab 'https://us04web.zoom.us/myhome' --start-fullscreen",
+        className =? "PNP_meeting",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
       False
     ),
-    ( "PNP_proj",
-      "multi-instance-chromium-browser --class=PNP_proj --new-window --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222",
-      className =? "PNP_proj",
-      Left $ centerRect 0.7,
-      False
+    (
+      ( "PNP_timer",
+        "multi-instance-chromium-browser --class=PNP_timer --new-window --app='http://localhost:4444' --start-fullscreen --remote-debugging-port=9222",
+        className =? "PNP_timer",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomLeft,
+      0.07,
+      0.07,
+      True
+    ),
+    (
+      ( "PNP_proj",
+        "multi-instance-chromium-browser --class=PNP_proj --new-window --app='http://localhost:5173' --start-fullscreen --remote-debugging-port=9222",
+        className =? "PNP_proj",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
+      True
     )
   ]
 
-nspDefs :: [NSPDef] = nspDefs' ++ pnpDefs'
+isEqualPNP :: PNPDef -> PNPDef -> Bool
+isEqualPNP ((name1, _, _, _, _), _, _, _, _) ((name2, _, _, _, _), _, _, _, _) =
+  name1 == name2
 
-mapToNSP :: [NSPDef] -> [NamedScratchpad]
-mapToNSP = map (\(cls, cmd, query, manage, _) ->
+pnpElemIndex :: PNPDef -> [PNPDef] -> Maybe Int
+pnpElemIndex pnpDef = go 0
+  where
+    go _ [] = Nothing
+    go i (x:xs)
+      | isEqualPNP pnpDef x = Just i
+      | otherwise           = go (i + 1) xs
+
+pnpMinimizationRectsMap :: M.Map String W.RationalRect
+pnpMinimizationRectsMap = M.fromList $ map (\pnpDef -> do
+      let ((name,_,_,_,_), corner, width, height, _) = pnpDef
+      let filtered = filter (\(_, c, _, _, _) -> c == corner) pnpDefs'
+      let idx = fromJust $ pnpElemIndex pnpDef filtered
+      (name, cornerRect idx width height corner)
+  ) pnpDefs'
+
+
+pnpDefsAsNSPDefs :: [NSPDef]
+pnpDefsAsNSPDefs = map (\(pnpDef, _, _, _, _) -> pnpDef) pnpDefs'
+
+nspDefs :: [NSPDef] = nspDefs' ++ pnpDefsAsNSPDefs
+
+mapNSPDefToNSP :: [NSPDef] -> [NamedScratchpad]
+mapNSPDefToNSP = map (\(cls, cmd, query, manage, _) ->
   NS cls cmd query (
-    -- TODO this is a bandaid. Will have to refactor, because NSPDefs assume the initial window state is equivalent to the maximized state
-    if cls == "PNP_log" then customFloating (bottomRightCornerRect 0.2 0) <+> doF W.focusDown
+    case manage of
+      Left rect -> customFloating rect
+      Right manageHook -> manageHook
+    )
+  )
 
-    else case manage of
+mapPNPDefToNSP :: [PNPDef] -> [NamedScratchpad]
+mapPNPDefToNSP = map (\((cls, cmd, query, maximizeManage, _),_,_,_,startMinimized) ->
+  NS cls cmd query (
+    if startMinimized then customFloating (fromJust $ M.lookup cls pnpMinimizationRectsMap)
+    else case maximizeManage of
       Left rect -> customFloating rect
       Right manageHook -> manageHook
     )
   )
 
 nsps :: [NamedScratchpad]
-nsps = mapToNSP nspDefs
+nsps = mapNSPDefToNSP nspDefs' ++ mapPNPDefToNSP pnpDefs'
 
 openNSPOnScreen :: String -> ScreenId -> X ()
 openNSPOnScreen name scn = do
   ensureNoPNPFocus
   openNSPOrPNPOnScreen name scn
+  win <- findWinOnActiveWorkspace $ className =? name
+  if isJust win then windows $ bringToFront (fromJust win)
+  else ensureNoPNPFocus
 
 openNSPOrPNPOnScreen :: String -> ScreenId -> X ()
-openNSPOrPNPOnScreen name scn = doOnScreen scn (namedScratchpadAction nsps name) 
+openNSPOrPNPOnScreen name scn = doOnScreen scn (namedScratchpadAction nsps name)
 
 hideNSP :: String -> X ()
 hideNSP nsp = do
@@ -849,11 +968,16 @@ hideAllNSPsAndPNPs = hidePNPs >> hideAllNSPs
 
 ------------------------------------------------------------------------
 -- picture-in-picture binds:
-type PnpDef = (Int, NSPDef)
-pnpDefs = zip [0..] pnpDefs'
 
-getPnpDefByClassName :: String -> PnpDef
-getPnpDefByClassName cls = fromJust $ find (\(_, (n, _, _, _, _)) -> n == cls) pnpDefs
+-- cornerIndexes is a dict of all corner types and a list of the indexes of the PNPDefs that use that corner:
+
+
+-- getPNPRectangleFromCornerUsingIndex :: PNPDef -> W.RationalRect
+-- getPNPRectangleFromCornerUsingIndex pnpDef = do mempty
+
+
+getPNPDefByClassName :: String -> PNPDef
+getPNPDefByClassName cls = fromJust $ find (\((n, _, _, _, _),_,_,_,_) -> n == cls) pnpDefs'
 
 data PnpBindParams = PnpBindParams
   {
@@ -867,10 +991,10 @@ ezPnpBinds = concatMap createBinds
     getWin cls = GNP.getNextMatch (className =? cls) GNP.Forward
     createBinds PnpBindParams {name, toggleMaximizationBind, toggleVisibilityBind} = [
           (toggleMaximizationBind, pnpToggleMaximization pnpDef),
-            (toggleVisibilityBind, pnpToggleVisibility pnpDef)
+            (toggleVisibilityBind, maintainFocus $ pnpToggleVisibility pnpDef)
         ]
       where
-        pnpDef = getPnpDefByClassName name
+        pnpDef = getPNPDefByClassName name
 
 ------------------------------------------------------------------------
 -- picture-in-picture utils:
@@ -911,13 +1035,14 @@ greedyUnhidePNPs :: X ()
 greedyUnhidePNPs = do
   HiddenPNPWindows hiddenWins <- XS.get
   nspNames <- mapM (runQuery className) hiddenWins
-  mapM_ (`openNSPOrPNPOnScreen` 0) (if null nspNames then map (\(_, (n, _, _, _, _)) -> n) pnpDefs else nspNames)
+  mapM_ (`openNSPOrPNPOnScreen` 0) (if null nspNames then map (\((n, _, _, _, _),_,_,_,_) -> n) pnpDefs' else nspNames)
   XS.put $ HiddenPNPWindows []
   fade <- getFadeOpacity <$> XS.get
   when (fade < defaultFadeOpacity) $ setFade defaultFadeOpacity
 
-pnpMaximize :: PnpDef -> X ()
+pnpMaximize :: PNPDef -> X ()
 pnpMaximize pnpDef = do
+  debugLog "pnpMaximize"
   unhidePNPs
   win' <- findWinOnAnyWorkspace (className =? cls)
   if isJust win' then do
@@ -929,7 +1054,7 @@ pnpMaximize pnpDef = do
       . bringToFront win
   else persistentLog Error ("pnpMaximize: window not found: " ++ cls)
   where
-    (i, (cls, cmd, _, manage, _)) = pnpDef
+    ((cls, cmd, _, manage, _),_,_,_,_) = pnpDef
 
 ensureNoPNPFocus = withFocused $ \focused -> do
   cls <- runQuery className focused
@@ -945,17 +1070,20 @@ ensureNoPNPFocus = withFocused $ \focused -> do
                           ) down
       focus $ head toFocus
 
-pnpMinimize :: Window -> PnpDef -> X ()
-pnpMinimize win (i,_) = do
-  windows $ \ws -> W.float win (bottomRightCornerRect 0.2 i) ws
+pnpMinimize :: Window -> PNPDef -> X ()
+pnpMinimize win pnpDef = do
+  let rect = fromJust $ M.lookup name pnpMinimizationRectsMap
+  windows $ \ws -> W.float win rect ws
+  where
+    ((name, _, _, _, _),_,_,_,_) = pnpDef
 
-pnpMinimizeAndReturnFocus :: Window -> Window -> PnpDef -> X ()
+pnpMinimizeAndReturnFocus :: Window -> Window -> PNPDef -> X ()
 pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
   pnpMinimize win pnpDef
   if originallyFocused /= win then focus originallyFocused
   else ensureNoPNPFocus
 
-pnpToggleMaximization :: PnpDef -> X ()
+pnpToggleMaximization :: PNPDef -> X ()
 pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
     win' <- findWinOnActiveWorkspace (className =? cls)
     if isNothing win' then do
@@ -974,16 +1102,21 @@ pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
             else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
       else pnpMinimizeAndReturnFocus win originallyFocused pnpDef
   where
-    (i, (cls, _, _, _, _)) = pnpDef
+    ((cls, _, _, _, _),_,_,_,_) = pnpDef
 
-pnpToggleVisibility :: PnpDef -> X ()
+pnpToggleVisibility :: PNPDef -> X ()
 pnpToggleVisibility pnpDef = withFocused $ \originallyFocused -> do
     openNSPOrPNPOnScreen name 0
     win' <- findWinOnActiveWorkspace (className =? name)
     when (isJust win') $ focus originallyFocused
   where
-    (i, (name, _, _, _, _)) = pnpDef
+    ((name, _, _, _, _),_,_,_,_) = pnpDef
 
+doTimer :: X ()
+doTimer = do
+  let promptConfig = myPromptConfig
+  inputPrompt promptConfig "minutes" ?+ \query -> do
+    spawn $ "guitimer " ++ query
 
 ------------------------------------------------------------------------
 -- keybindings:
@@ -1037,6 +1170,11 @@ getKeybindings conf =
         { name = "PNP_meeting",
           toggleMaximizationBind = (altMask, xK_z),
           toggleVisibilityBind = (altMask+shiftMask, xK_z)
+        },
+      PnpBindParams
+        { name = "PNP_timer",
+          toggleMaximizationBind = (altMask+controlMask+shiftMask, xK_backslash),
+          toggleVisibilityBind = (altMask+controlMask, xK_a)
         }
     ]
     ++ ezWinBinds
@@ -1133,7 +1271,7 @@ getKeybindings conf =
          ( (altMask + controlMask, xK_Escape),
            do
              hideNSP "NSP_tmuxa-1"
-             openNSPOrPNPOnScreen "NSP_tmuxa-2" 0
+             openNSPOnScreen "NSP_tmuxa-2" 0
          ),
          ------------------------------------------------------------
          -- window fade:
@@ -1178,6 +1316,7 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
+         ((altMask+controlMask+shiftMask, xK_a), doTimer),
          ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
          ((altMask+shiftMask+controlMask, xK_bracketright), spawn "toggle-picom-blur"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
