@@ -298,7 +298,12 @@ myStartupHook = do
 
   let pnpDef = getPNPDefByClassName "PNP_log"
   let ((cls, cmd, _, _, _),_,_,_,_) = pnpDef
-  when debug $ spawn $ "kill $(xdotool search --classname " ++ cls ++ " getwindowpid); " ++ cmd
+  when debug $ spawn $ "touch $HOME/.xmonad-init-flag \
+    \&& tmux kill-session -t tmuxa-pnp-log\
+    \; tmux detach-client -t $(cat /tmp/tmux-pane-view-client)\
+    \; " 
+    ++ cmd
+    ++ "; sleep 1; rm -f $HOME/.xmonad-init-flag" 
 
   oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
   when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
@@ -327,7 +332,6 @@ myStartupHook = do
     debugLog "*********************************************************\n"
 
     spawn $ "x-summary >> " ++ debugLogFile
-  
   -- ensureNoPNPFocus
 
 
@@ -822,19 +826,39 @@ nspDefs' =
       Left $ centerRect 0.3,
       -- nonFloating,
       True
-    )
+    ),
+    nspRemonadDef
   ]
+
+nspRemonadCmd = singleCommandTermCmd "NSP_remonad" "tmuxa-remonad" "remonad --interactive --restart"
+nspRemonadDef :: NSPDef
+nspRemonadDef = ( 
+    "NSP_remonad",
+    nspRemonadCmd,
+    className =? "NSP_remonad",
+    Left $ centerRect 0.8,
+    True
+  )
+
+confirmRemonad :: X ()
+confirmRemonad = confirm "restart xmonad?" $ spawn $ "tmux kill-session -t tmuxa-remonad; " ++ nspRemonadCmd
+
+singleCommandTermCmd :: String -> String -> String -> String
+singleCommandTermCmd cls tmuxSessionID initCmd =
+  "tmux kill-session -t " ++ tmuxSessionID ++ "; "
+  ++ "unique-term " ++ cls ++ " "
+    ++ "\"tmuxa " ++ tmuxSessionID ++ " --dir=$HOME --no-layout "
+      ++"--cmd=\\\""
+        ++ "trap 'tmux kill-session -t " ++ tmuxSessionID ++ "' INT; "
+        ++ initCmd
+      ++ "\\\"\""
 
 pnpDefs' :: [PNPDef] = [
     ( (
         "PNP_log",
         (
-          if debug then "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_log "
-                          -- ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"xmdebug\\\"'\"; "
-                          -- ++ "\"tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"trap 'tmux kill-session' INT TERM EXIT; xmdebug\\\"\"; "
-                          ++ "\"tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"trap 'tmux kill-session -t tmuxa-pnp-log' INT TERM EXIT; xmdebug\\\"\"; "
-                          ++ "tmux-pane-view --class=PNP_log "
-
+          if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before" 
+              ++ "; [ ! -f $HOME/.xmonad-init-flag ] && tmux-pane-view --class=PNP_log"
           else "tmux-pane-view --class=PNP_log"
         ) ++ " --alacritty=theme$HOME/.config/alacritty/transparent.toml",
         className =? "PNP_log",
@@ -1386,11 +1410,16 @@ getKeybindings conf =
                  exact = True,
                  useClassName = False
                }
-         ),
-         ---------------------------------------------------------------
-         -- system
-         ((winMask , xK_m), sendMessage ToggleStruts),
-         ((winMask + altMask, xK_q), confirmCmd "remonad --restart"),
+          ),
+          ---------------------------------------------------------------
+          -- system
+          ((winMask , xK_m), sendMessage ToggleStruts),
+          ((winMask, xK_q), do
+              win <- findWinOnAnyWorkspace $ className =? "NSP_remonad"
+              if isJust win then openNSPOnScreen "NSP_remonad" 0
+              else confirmRemonad
+          ),
+         ((winMask + altMask, xK_q), confirmRemonad),
          ((altMask + controlMask + shiftMask, xK_F10), spawn "xlock -mode random"),
          ((altMask + controlMask + shiftMask, xK_F11), spawn "toggle-kp --off; systemctl suspend"),
          ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
