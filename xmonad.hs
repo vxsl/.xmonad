@@ -46,18 +46,20 @@ import XMonad.Hooks.ManageHelpers
 import Data.Monoid (All(..))
 import GHC.Utils.Monad (whenM)
 import Text.Printf (printf)
-import System.Posix (sleep, touchFile)
+import System.Posix (touchFile)
 import System.Directory (removeFile, renameFile, doesFileExist)
 import Numeric
 import Data.Ratio
 import GHC.Prelude (Fractional(fromRational))
 import XMonad.Hooks.ManageHelpers (doFocus)
+import Control.Concurrent (threadDelay, forkIO)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
 altMask = mod1Mask
 
 debug=False
+-- debug=True
 
 ------------------------------------------------------------------------
 -- workspaces:
@@ -294,30 +296,26 @@ myStartupHook = do
   windows $ focusScreen 0
   setFade defaultFadeOpacity
 
+  let pnpDef = getPNPDefByClassName "PNP_log"
+  let ((cls, cmd, _, _, _),_,_,_,_) = pnpDef
+  when debug $ spawn $ "kill $(xdotool search --classname " ++ cls ++ " getwindowpid); " ++ cmd
+
+  oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
+  when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
+  curExists <- io $ doesFileExist debugLogFile
+  when curExists $ io $ renameFile debugLogFile (debugLogFile ++ ".1")
+
+
+
+  spawn $ "\
+    \echo ==================================================================== >> " ++ debugLogFile ++ "\
+    \ && date >> " ++ debugLogFile ++ "\
+    \ && echo ==================================================================== >> " ++ persistentLogFile ++ "\
+    \ && date >> " ++ persistentLogFile ++ "\
+    \"
+
+
   when debug $ do
-    let pnpDef = getPNPDefByClassName "PNP_log"
-    let ((cls, cmd, _, _, _),_,_,_,_) = pnpDef
-
-    spawn $ "xdotool search --classname " ++ cls ++ " windowclose"
-    liftIO $ sleep 1
-
-    oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
-    when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
-    curExists <- io $ doesFileExist debugLogFile
-    when curExists $ io $ renameFile debugLogFile (debugLogFile ++ ".1")
-
-    spawn cmd
-    liftIO $ sleep 1 -- TODO find a less hacky solution to wait for previous commands to finish
-
-    spawn $ "\
-      \echo ==================================================================== >> " ++ debugLogFile ++ "\
-      \ && date >> " ++ debugLogFile ++ "\
-      \ && echo ==================================================================== >> " ++ persistentLogFile ++ "\
-      \ && date >> " ++ persistentLogFile ++ "\
-      \"
-    liftIO $ sleep 1
-
-
     debugLog "=====================================================================\n"
     debugLog "*********************************************************"
     logXmonadState
@@ -329,6 +327,9 @@ myStartupHook = do
     debugLog "*********************************************************\n"
 
     spawn $ "x-summary >> " ++ debugLogFile
+  
+  -- ensureNoPNPFocus
+
 
   where
     cycleAllWorkspacesOnScreen i = do
@@ -359,7 +360,8 @@ myManageHook =
       className =? "Chromium-browser" --> doShift "2_1",
       className =? "tmux-pane-view" --> doShift "1_1",
       className =? "Google-chrome" --> doShift "project",
-      className =? "partmin-ui" --> doShift "project"
+      className =? "partmin-ui" --> doShift "project",
+      fmap (`Set.member` pnpNamesThatStartMinimized) className --> doF W.focusDown
     ]
 
 ------------------------------------------------------------------------
@@ -386,8 +388,8 @@ summarizeWorkspaceStateEventHook _ = do
   return (All True)
 
 myHandleEventHook =
-  -- summarizeWorkspaceStateEventHook >>
-  resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
+  (if debug then summarizeWorkspaceStateEventHook else mempty) <>
+  (resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat))
 
 
 ------------------------------------------------------------------------
@@ -827,11 +829,14 @@ pnpDefs' :: [PNPDef] = [
     ( (
         "PNP_log",
         (
-          if debug then
-          "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_log "
-            ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"tail -f " ++ debugLogFile ++ "\\\"'\" "
-          else "tmux-pane-view --class=PNP_log --alacritty_theme="
-        ) ++ "$HOME/.config/alacritty/transparent.toml",
+          if debug then "tmux kill-session -t tmuxa-pnp-log; unique-term PNP_log "
+                          -- ++ "\"zsh -i -c 'tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"xmdebug\\\"'\"; "
+                          -- ++ "\"tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"trap 'tmux kill-session' INT TERM EXIT; xmdebug\\\"\"; "
+                          ++ "\"tmuxa tmuxa-pnp-log --dir=$HOME --no-layout --cmd=\\\"trap 'tmux kill-session -t tmuxa-pnp-log' INT TERM EXIT; xmdebug\\\"\"; "
+                          ++ "tmux-pane-view --class=PNP_log "
+
+          else "tmux-pane-view --class=PNP_log"
+        ) ++ " --alacritty=theme$HOME/.config/alacritty/transparent.toml",
         className =? "PNP_log",
         Left $ centerRect 0.7,
         False
@@ -904,6 +909,9 @@ pnpDefs' :: [PNPDef] = [
     )
   ]
 
+pnpNamesThatStartMinimized :: Set.Set String
+pnpNamesThatStartMinimized = Set.fromList $ map (\((n,_,_,_,_),_,_,_,_) -> n) $ filter (\(_,_,_,_,startMinimized) -> startMinimized) pnpDefs'
+
 isEqualPNP :: PNPDef -> PNPDef -> Bool
 isEqualPNP ((name1, _, _, _, _), _, _, _, _) ((name2, _, _, _, _), _, _, _, _) =
   name1 == name2
@@ -920,10 +928,13 @@ pnpElemIndex pnpDef = go 0
 pnpMinimizationRectsMap :: M.Map String W.RationalRect
 pnpMinimizationRectsMap = M.fromList $ map (\pnpDef -> do
       let ((name,_,_,_,_), corner, width, height, _) = pnpDef
+      -- let ogDef = if "*" `isInfixOf` name
       let ogDef = if "*" `isInfixOf` name
           then fromJust $ find (\((n,_,_,_,_),_,_,_,_) -> n == takeWhile (/= '*') name) pnpDefs'
           else pnpDef
-      let filtered = filter (\(_, c, _, _, _) -> c == corner) pnpDefs'
+      -- let filtered = filter (\(n, c, _, _, _) -> ((c == corner) && (not $ "*" `isInfixOf` n))) pnpDefs'
+      -- let filtered = filter (\(n, c, _, _, _) -> ((c == corner) && (not $ "*" `isInfixOf` n))) pnpDefs'
+      let filtered = filter (\((n,_,_,_,_), c, _, _, _) -> c == corner && not ("*" `isInfixOf` n)) pnpDefs'
       let idx = fromJust $ pnpElemIndex ogDef filtered
       (name, cornerRect idx width height corner)
   ) pnpDefs'
