@@ -294,8 +294,6 @@ myStartupHook = do
   windows $ focusScreen 0
   setFade defaultFadeOpacity
 
-  debugLog pnpMinimizationRectsMap
-
   when debug $ do
     let pnpDef = getPNPDefByClassName "PNP_log"
     let ((cls, cmd, _, _, _),_,_,_,_) = pnpDef
@@ -388,7 +386,7 @@ summarizeWorkspaceStateEventHook _ = do
   return (All True)
 
 myHandleEventHook =
-  summarizeWorkspaceStateEventHook .
+  -- summarizeWorkspaceStateEventHook >>
   resizeHook <> refocusLastWhen (refocusingIsActive <||> isFloat)
 
 
@@ -516,7 +514,7 @@ type AbbreviatedNspBindsParams = (KeySym, String)
 
 nspBinds :: NspBindsParams -> [((KeyMask, KeySym), X ())]
 nspBinds NspBindsParams {keySym, nspName} =
-  [ 
+  [
     ((altMask, keySym), openNSPOnScreen nspName 0
     -- do
     --   openNSPOrPNPOnScreen nspName 0
@@ -844,10 +842,22 @@ pnpDefs' :: [PNPDef] = [
       True
     ),
     (
-
       ( "PNP_whiteboard",
-        "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
+        -- "firefox -P clone5 --class PNP_whiteboard --new-window https://whimsical.com",
+        "firefox -P clone5 --class PNP_whiteboard --new-window https://excalidraw.com -kiosk",
         className =? "PNP_whiteboard",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
+      False
+    ),
+    (
+      ( "PNP_whiteboard*nokiosk",
+        "firefox -P clone6 --class PNP_whiteboard*nokiosk --new-window https://excalidraw.com",
+        className =? "PNP_whiteboard*nokiosk",
         Left $ centerRect 0.7,
         False
       ),
@@ -906,11 +916,15 @@ pnpElemIndex pnpDef = go 0
       | isEqualPNP pnpDef x = Just i
       | otherwise           = go (i + 1) xs
 
+
 pnpMinimizationRectsMap :: M.Map String W.RationalRect
 pnpMinimizationRectsMap = M.fromList $ map (\pnpDef -> do
       let ((name,_,_,_,_), corner, width, height, _) = pnpDef
+      let ogDef = if "*" `isInfixOf` name
+          then fromJust $ find (\((n,_,_,_,_),_,_,_,_) -> n == takeWhile (/= '*') name) pnpDefs'
+          else pnpDef
       let filtered = filter (\(_, c, _, _, _) -> c == corner) pnpDefs'
-      let idx = fromJust $ pnpElemIndex pnpDef filtered
+      let idx = fromJust $ pnpElemIndex ogDef filtered
       (name, cornerRect idx width height corner)
   ) pnpDefs'
 
@@ -1042,17 +1056,15 @@ greedyUnhidePNPs = do
 
 pnpMaximize :: PNPDef -> X ()
 pnpMaximize pnpDef = do
-  debugLog "pnpMaximize"
   unhidePNPs
   win' <- findWinOnAnyWorkspace (className =? cls)
-  if isJust win' then do
+  when (isJust win') $ do
     let win = fromJust win'
     windows $ either
         (W.float win)
         (const $ W.sink win) -- TODO figure out how to use manageHook on just the targeted window here
         manage
       . bringToFront win
-  else persistentLog Error ("pnpMaximize: window not found: " ++ cls)
   where
     ((cls, cmd, _, manage, _),_,_,_,_) = pnpDef
 
@@ -1316,6 +1328,12 @@ getKeybindings conf =
          ((winMask + controlMask + shiftMask, xF86XK_AudioLowerVolume), spawn "setredshift --reset"),
          ---------------------------------------------------------------
          -- apps
+         ((altMask+shiftMask+controlMask, xK_i), do
+            -- let ((_,cmd,_,_,_),_,_,_,_) = getPNPDefByClassName "PNP_whiteboard"
+            -- spawn $ cmd ++ " -kiosk"
+            -- spawn "firefox -P clone5 --class PNP_whiteboard --new-window https://excalidraw.com"
+            pnpToggleMaximization $ getPNPDefByClassName "PNP_whiteboard*nokiosk"
+          ),
          ((altMask+controlMask+shiftMask, xK_a), doTimer),
          ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
          ((altMask+shiftMask+controlMask, xK_bracketright), spawn "toggle-picom-blur"),
