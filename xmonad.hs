@@ -53,13 +53,14 @@ import Data.Ratio
 import GHC.Prelude (Fractional(fromRational))
 import XMonad.Hooks.ManageHelpers (doFocus)
 import Control.Concurrent (threadDelay, forkIO)
+import XMonad (getClassHint)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
 altMask = mod1Mask
 
-debug=False
--- debug=True
+-- debug=False
+debug=True
 
 ------------------------------------------------------------------------
 -- workspaces:
@@ -136,14 +137,6 @@ cornerRect i w h TopRight = W.RationalRect (1 - w) (fromIntegral i * h) w h
 cornerRect i w h TopLeft = W.RationalRect 0 (fromIntegral i * h) w h
 
 
--- bottomRightCornerRect :: Rational -> Int -> W.RationalRect
--- bottomRightCornerRect s idx = W.RationalRect x y w h
---   where
---     w = s
---     h = s
---     x = 1 - w
---     y = 1 - h - (fromIntegral idx * h)
-
 maintainFocus :: X () -> X ()
 maintainFocus action = do
   ws <- gets windowset
@@ -158,18 +151,40 @@ maintainFocus action = do
       when (ogWorkspace == newWorkspace) $ focus originallyFocused
     else action
 
-bringToFront win ws = do
-  let stack = W.stack $ W.workspace $ W.current ws
-  let stack' = W.integrate $ fromJust stack
-  let stack'' = W.Stack { W.focus = win, W.up = [], W.down = filter (/= win) stack' }
-  ws {
+bringToFront win = withFocused $ \focused -> do
+  -- focusCls <- runQuery className focused
+  -- let focusedIsNSP = "NSP_" `isPrefixOf` focusCls
+  -- when focusedIsNSP $ windows $ W.shiftWin "NSP" focused 
+
+  ws <- gets windowset
+  let stack' = W.stack $ W.workspace $ W.current ws
+  let stack = fromJust stack'
+
+  pnps' <- getPNPs
+  let pnps = Set.fromList pnps'
+
+  let (pnpsInUp, restOfUp) = partition (`Set.member` pnps) stack.up
+  let newUp = filter (/= win) restOfUp
+
+  focusCls <- runQuery className focused
+  let newDown'' = stack.focus : stack.down
+  -- let focusedIsPNP = "PNP_" `isPrefixOf` focusCls
+  -- let newDown'' = if focusedIsPNP
+  --     then stack.down
+  --     else stack.focus : stack.down
+  let newDown' = pnpsInUp ++ newDown''
+  let newDown = filter (/= win) newDown'
+
+  let stack'' = W.Stack { W.focus = win, W.up = newUp, W.down = newDown }
+  debugLog $ "bringToFront new stack: " ++ show stack''
+  windows $ const ws {
           W.current = (W.current ws) {
             W.workspace = (W.workspace $ W.current ws) {
               W.stack = Just stack''
             }
           }
         }
-
+  -- when focusedIsNSP $ windows $ W.shiftWin "NSP" focused 
 
 findWinOnActiveWorkspace :: Query Bool -> X (Maybe Window)
 findWinOnActiveWorkspace q = do
@@ -215,7 +230,9 @@ printWorkspaceState = do
     return $ "\n\n========================\n" ++ show stack ++ "\n" ++ show nameMap ++ "\n" ++
       "focus: " ++ printName stack.focus ++
       "\nup: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.up) ++
-      "\ndown: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.down)
+      "\ndown: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.down) ++
+      "\nintegrate: " ++ concatMap (\w -> printName w ++ ", ") (W.integrate stack)
+
   else return "empty"
 
 
@@ -301,9 +318,9 @@ myStartupHook = do
   when debug $ spawn $ "touch $HOME/.xmonad-init-flag \
     \&& tmux kill-session -t tmuxa-pnp-log\
     \; tmux detach-client -t $(cat /tmp/tmux-pane-view-client)\
-    \; " 
+    \; "
     ++ cmd
-    ++ "; sleep 1; rm -f $HOME/.xmonad-init-flag" 
+    ++ "; sleep 1; rm -f $HOME/.xmonad-init-flag"
 
   oldCopyExists <- io $ doesFileExist (debugLogFile ++ ".1")
   when oldCopyExists $ io $ removeFile (debugLogFile ++ ".1")
@@ -832,7 +849,7 @@ nspDefs' =
 
 nspRemonadCmd = singleCommandTermCmd "NSP_remonad" "tmuxa-remonad" "remonad --interactive --restart"
 nspRemonadDef :: NSPDef
-nspRemonadDef = ( 
+nspRemonadDef = (
     "NSP_remonad",
     nspRemonadCmd,
     className =? "NSP_remonad",
@@ -857,7 +874,7 @@ pnpDefs' :: [PNPDef] = [
     ( (
         "PNP_log",
         (
-          if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before" 
+          if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before"
               ++ "; [ ! -f $HOME/.xmonad-init-flag ] && tmux-pane-view --class=PNP_log"
           else "tmux-pane-view --class=PNP_log"
         ) ++ " --alacritty=theme$HOME/.config/alacritty/transparent.toml",
@@ -996,8 +1013,8 @@ openNSPOnScreen name scn = do
   ensureNoPNPFocus
   openNSPOrPNPOnScreen name scn
   win <- findWinOnActiveWorkspace $ className =? name
-  if isJust win then windows $ bringToFront (fromJust win)
-  else ensureNoPNPFocus
+  maybe ensureNoPNPFocus bringToFront win
+  -- forM_ win bringToFront
 
 openNSPOrPNPOnScreen :: String -> ScreenId -> X ()
 openNSPOrPNPOnScreen name scn = doOnScreen scn (namedScratchpadAction nsps name)
@@ -1099,7 +1116,11 @@ pnpMaximize pnpDef = do
         (W.float win)
         (const $ W.sink win) -- TODO figure out how to use manageHook on just the targeted window here
         manage
-      . bringToFront win
+      -- . bringToFront win
+    -- withFocused $ \focused -> windows $ bringToFront win focused
+    bringToFront win
+    -- windows $ W.focusWindow win
+    -- focus win
   where
     ((cls, cmd, _, manage, _),_,_,_,_) = pnpDef
 
@@ -1132,6 +1153,7 @@ pnpMinimizeAndReturnFocus win originallyFocused pnpDef = do
 
 pnpToggleMaximization :: PNPDef -> X ()
 pnpToggleMaximization pnpDef = withFocused $ \originallyFocused -> do
+    debugLog "TOGGLING MAXIMIZATION"
     win' <- findWinOnActiveWorkspace (className =? cls)
     if isNothing win' then do
       hideNSP cls
