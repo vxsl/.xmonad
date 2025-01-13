@@ -54,13 +54,14 @@ import GHC.Prelude (Fractional(fromRational))
 import XMonad.Hooks.ManageHelpers (doFocus)
 import Control.Concurrent (threadDelay, forkIO)
 import XMonad (getClassHint)
+import XMonad.Actions.CopyWindow (copyToAll)
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
 altMask = mod1Mask
 
--- debug=False
-debug=True
+debug=False
+-- debug=True
 
 ------------------------------------------------------------------------
 -- workspaces:
@@ -85,7 +86,7 @@ logToFile path str =
                  Nothing -> show str    -- Otherwise, use `show`
   in io $ appendFile path (output ++ "\n")
 
-debugLog msg = logToFile debugLogFile msg
+debugLog msg = when debug $ logToFile debugLogFile msg
 
 data LogLevel = Debug | Info | Warning | Error
   deriving (Show, Eq)
@@ -160,7 +161,7 @@ bringToFront win = withFocused $ \focused -> do
   let stack' = W.stack $ W.workspace $ W.current ws
   let stack = fromJust stack'
 
-  pnps' <- getPNPs
+  pnps' <- getPNPsOnActiveWorkspace
   let pnps = Set.fromList pnps'
 
   let (pnpsInUp, restOfUp) = partition (`Set.member` pnps) stack.up
@@ -431,7 +432,7 @@ rotaryAdjustFade f = do
   let newVal = max 0 (min 1 (f val))
   -- debugLog $ "rotaryAdjustFade: " ++ rationalAsDecimal newVal ++ " (was " ++ rationalAsDecimal val ++ ")"
   if newVal > val then do
-    visiblePNPs <- getPNPs
+    visiblePNPs <- getPNPsOnActiveWorkspace
     when (null visiblePNPs) unhidePNPs
     setFade $ max defaultFadeOpacity newVal
   else do
@@ -711,7 +712,10 @@ type PNPDef = (
   )
 
 getPNPs :: X [Window]
-getPNPs = findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
+getPNPs = findWinsOnAnyWorkspace (("PNP_" `isPrefixOf`) <$> className)
+
+getPNPsOnActiveWorkspace :: X [Window]
+getPNPsOnActiveWorkspace = findWinsOnActiveWorkspace (("PNP_" `isPrefixOf`) <$> className)
 
 getNSPs :: X [Window]
 getNSPs = findWinsOnActiveWorkspace (("NSP_" `isPrefixOf`) <$> className)
@@ -926,7 +930,7 @@ pnpDefs' :: [PNPDef] = [
     ),
     (
       ( "PNP_timer",
-        "multi-instance-chromium-browser --class=PNP_timer --new-window --app='http://localhost:4444' --start-fullscreen --remote-debugging-port=9222",
+        "",
         className =? "PNP_timer",
         Left $ centerRect 0.7,
         False
@@ -1321,7 +1325,7 @@ getKeybindings conf =
               nspsToHide <- getNSPs
               if not $ null nspsToHide then hideAllNSPs
               else do
-                pnpsToHide <- getPNPs
+                pnpsToHide <- getPNPsOnActiveWorkspace
                 -- toHide <- findWinsOnActiveWorkspace $ fmap (\cls -> any (`isPrefixOf` cls) ["PNP_", "NSP_"]) className
                 -- debugLog toHide
                 if null pnpsToHide then togglePNPs
@@ -1392,8 +1396,8 @@ getKeybindings conf =
             pnpToggleMaximization $ getPNPDefByClassName "PNP_whiteboard*nokiosk"
           ),
          ((altMask+controlMask+shiftMask, xK_a), doTimer),
-         ((altMask+controlMask, xK_bracketright), spawn "toggle-alacritty-transparent"),
-         ((altMask+shiftMask+controlMask, xK_bracketright), spawn "toggle-picom-blur"),
+         ((altMask+controlMask, xK_apostrophe), spawn "toggle-alacritty-transparent"),
+         ((altMask+controlMask+shiftMask, xK_apostrophe), spawn "toggle-picom-blur"),
          ((winMask .|. shiftMask, xK_Return), spawn $ XMonad.terminal conf),
          ((winMask, xK_space), spawn "dmenu-custom"),
          ((altMask+shiftMask, xK_a), searchDocs "haskell"),
@@ -1453,20 +1457,20 @@ getKeybindings conf =
          -- scripts
          ((altMask + shiftMask, xK_Delete), spawn "vpnctrl --up"),
          ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down"),
-         ((altMask, xK_slash), spawn "toggle-kp"),
+         ((altMask, xK_slash), spawn "toggle-kp")
          ---------------------------------------------------------------
          -- ephemeral
-         ( (altMask, xK_1),
-           do
-             killAllWindowsByClass $ className =? "Chromium-browser"
-             spawn "run-on-tmux-pane-view \"yarn start | tee main.log\""
-             windows $ focusScreen 0
-         ),
-         ( (altMask, xK_2),
-           do
-             killAllWindowsByClass $ className =? "Chromium-browser"
-             spawn "run-on-tmux-pane-view"
-         )
+        --  ( (altMask, xK_1),
+        --    do
+        --      killAllWindowsByClass $ className =? "Chromium-browser"
+        --      spawn "run-on-tmux-pane-view \"yarn start | tee main.log\""
+        --      windows $ focusScreen 0
+        --  ),
+        --  ( (altMask, xK_2),
+        --    do
+        --      killAllWindowsByClass $ className =? "Chromium-browser"
+        --      spawn "run-on-tmux-pane-view"
+        --  )
        ]
 
 ------------------------------------------------------------------------
