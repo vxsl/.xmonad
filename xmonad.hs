@@ -875,14 +875,26 @@ singleCommandTermCmd cls tmuxSessionID initCmd =
       ++ "\\\"\""
 
 pnpDefs' :: [PNPDef] = [
-    ( (
+    (
+      (
         "PNP_log",
-        (
-          if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before"
+        if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before"
               ++ "; [ ! -f $HOME/.xmonad-init-flag ] && tmux-pane-view --class=PNP_log"
-          else "tmux-pane-view --class=PNP_log"
-        ) ++ " --alacritty=theme$HOME/.config/alacritty/transparent.toml",
+          else "tmux-pane-view --class=PNP_log",
         className =? "PNP_log",
+        Left $ centerRect 0.7,
+        False
+      ),
+      BottomRight,
+      0.2,
+      0.2,
+      True
+    ),
+    (
+      (
+        "PNP_alt_log",
+        "tmux-pane-view --class=PNP_alt_log --alt-client",
+        className =? "PNP_alt_log",
         Left $ centerRect 0.7,
         False
       ),
@@ -1238,6 +1250,11 @@ getKeybindings conf =
         { name = "PNP_log",
           toggleMaximizationBind = (altMask, xK_bracketright),
           toggleVisibilityBind = (altMask+shiftMask, xK_bracketright)
+        },
+      PnpBindParams
+        { name = "PNP_alt_log",
+          toggleMaximizationBind = (altMask, xK_bracketleft),
+          toggleVisibilityBind = (altMask+shiftMask, xK_bracketleft)
         },
       PnpBindParams
         { name = "PNP_meeting",
