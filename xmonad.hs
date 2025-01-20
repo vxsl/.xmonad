@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 
 import Control.Monad
 import Data.List
