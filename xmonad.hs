@@ -44,17 +44,16 @@ import XMonad.Util.ExtensibleState qualified as XS
 import XMonad.Util.WorkspaceCompare
 import XMonad.Hooks.ManageHelpers
 import Data.Monoid (All(..))
-import GHC.Utils.Monad (whenM)
 import Text.Printf (printf)
 import System.Posix (touchFile)
 import System.Directory (removeFile, renameFile, doesFileExist)
 import Numeric
 import Data.Ratio
-import GHC.Prelude (Fractional(fromRational))
 import XMonad.Hooks.ManageHelpers (doFocus)
 import Control.Concurrent (threadDelay, forkIO)
 import XMonad (getClassHint)
 import XMonad.Actions.CopyWindow (copyToAll)
+import XMonad.Util.PureX (whenM')
 
 winMask, altMask :: KeyMask
 winMask = mod4Mask
@@ -1106,7 +1105,7 @@ unhidePNPs = do
   when (fade < defaultFadeOpacity) $ setFade defaultFadeOpacity
 
 togglePNPs = maintainFocus $
-  whenM ((/= "NSP") <$> getCurrentWorkspaceID) $ do
+  whenM' ((/= "NSP") <$> getCurrentWorkspaceID) $ do
     HiddenPNPWindows hiddenWins <- XS.get
     if null hiddenWins then do
         visibleWins <- getPNPs
@@ -1338,7 +1337,7 @@ getKeybindings conf =
          -- NSPs:
          ((winMask, xK_minus), toggleOrView "NSP"),
          ((altMask, xK_grave),
-            whenM ((/= "NSP") <$> getCurrentWorkspaceID) $ do
+            whenM' ((/= "NSP") <$> getCurrentWorkspaceID) $ do
               nspsToHide <- getNSPs
               if not $ null nspsToHide then hideAllNSPs
               else do
