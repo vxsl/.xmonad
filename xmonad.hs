@@ -1,6 +1,5 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 
 import Control.Monad
 import Data.List
@@ -164,11 +163,11 @@ bringToFront win = withFocused $ \focused -> do
   pnps' <- getPNPsOnActiveWorkspace
   let pnps = Set.fromList pnps'
 
-  let (pnpsInUp, restOfUp) = partition (`Set.member` pnps) stack.up
+  let (pnpsInUp, restOfUp) = partition (`Set.member` pnps) (W.up stack)
   let newUp = filter (/= win) restOfUp
 
   focusCls <- runQuery className focused
-  let newDown'' = stack.focus : stack.down
+  let newDown'' = W.focus stack : W.down stack
   -- let focusedIsPNP = "PNP_" `isPrefixOf` focusCls
   -- let newDown'' = if focusedIsPNP
   --     then stack.down
@@ -229,9 +228,9 @@ printWorkspaceState = do
     let curWorkspaceWindowList = W.integrate stack
     let printName w = fromMaybe (show w) (M.lookup (show w) nameMap)
     return $ "\n\n========================\n" ++ show stack ++ "\n" ++ show nameMap ++ "\n" ++
-      "focus: " ++ printName stack.focus ++
-      "\nup: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.up) ++
-      "\ndown: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (stack.down) ++
+      "focus: " ++ printName (W.focus stack) ++
+      "\nup: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (W.up stack) ++
+      "\ndown: " ++ concatMap (\w -> show w ++ " " ++ printName w ++ ", ") (W.down stack) ++
       "\nintegrate: " ++ concatMap (\w -> printName w ++ ", ") (W.integrate stack)
 
   else return "empty"
@@ -572,21 +571,21 @@ data WinBindsParams = WinBindsParams
   { keySym :: KeySym,
     queryStr :: String,
     notFoundAction :: X (),
-    exact :: Bool,
-    useClassName :: Bool,
-    extraAction :: X () -- extra action to perform when the window is found or created
+    _exact :: Bool,
+    _useClassName :: Bool,
+    _extraAction :: X () -- extra action to perform when the window is found or created
   }
 
 defaultWinBindsParams :: WinBindsParams -- default WinBindsParams
 defaultWinBindsParams =
   WinBindsParams
-    { exact = False,
-      useClassName = False,
-      extraAction = mempty
+    { _exact = False,
+      _useClassName = False,
+      _extraAction = mempty
     }
 
 winBinds :: WinBindsParams -> [((KeyMask, KeySym), X ())]
-winBinds WinBindsParams {keySym, queryStr, notFoundAction, exact, useClassName, extraAction} =
+winBinds WinBindsParams {keySym, queryStr, notFoundAction, _exact, _useClassName, _extraAction} =
   [ ((altMask, keySym), seeWin params),
     ((altMask + shiftMask, keySym), seeWin params {greedy = True})
     -- ((altMask + controlMask, keySym), seeWin params {searchBackwards = True})
@@ -597,9 +596,9 @@ winBinds WinBindsParams {keySym, queryStr, notFoundAction, exact, useClassName, 
       defaultSeeWinParams
         { queryStr = queryStr,
           notFoundAction = notFoundAction,
-          exact = exact,
-          useClassName = useClassName,
-          extraAction = extraAction
+          exact = _exact,
+          useClassName = _useClassName,
+          extraAction = _extraAction
         }
 
 winBindsIDE :: [KeySym] -> [((KeyMask, KeySym), X ())]
@@ -654,9 +653,9 @@ ezWinBinds =
                 { keySym = keySym,
                   queryStr = queryStr,
                   notFoundAction = notFoundAction,
-                  exact = ops.exact,
-                  useClassName = ops.useClassName,
-                  extraAction = ops.extraAction
+                  _exact = _exact ops,
+                  _useClassName = _useClassName ops,
+                  _extraAction = _extraAction ops
                 }
             else
               defaultWinBindsParams
@@ -1147,7 +1146,7 @@ ensureNoPNPFocus = withFocused $ \focused -> do
     let stack' = W.stack $ W.workspace $ W.current ws
     when (isJust stack') $ do
       let stack = fromJust stack'
-      let down = stack.down
+      let down = W.down stack
       toFocus <- filterM ( \w -> do
                                 cls <- runQuery className w
                                 return $ not $ "PNP_" `isPrefixOf` cls
@@ -1272,7 +1271,7 @@ getKeybindings conf =
         ( xK_x,
           "code",
           spawn "not-dotfiles code -n",
-          Just $ defaultWinBindsParams {exact = True}
+          Just $ defaultWinBindsParams {_exact = True}
         ),
         -- ( xK_e,
         --   "tmux-pane-view",
@@ -1284,7 +1283,7 @@ getKeybindings conf =
         ( xK_p,
           "firefox",
           spawn "firefox --new-window",
-          Just $ defaultWinBindsParams {useClassName = True}
+          Just $ defaultWinBindsParams {_useClassName = True}
         )
         -- ( xK_period,
         --   -- "partmin-ui",
