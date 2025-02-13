@@ -850,7 +850,7 @@ nspDefs' =
     nspRemonadDef
   ]
 
-nspRemonadCmd = singleCommandTermCmd "NSP_remonad" "tmuxa-remonad" "remonad --interactive --restart"
+nspRemonadCmd = singleCommandTermCmd "NSP_remonad" "tmuxa-remonad" "remonad --interactive --restart && xdotool search NSP_remonad windowkill"
 nspRemonadDef :: NSPDef
 nspRemonadDef = (
     "NSP_remonad",
@@ -861,7 +861,7 @@ nspRemonadDef = (
   )
 
 confirmRemonad :: X ()
-confirmRemonad = confirm "restart xmonad?" $ spawn $ "tmux kill-session -t tmuxa-remonad; " ++ nspRemonadCmd
+confirmRemonad = confirm "restart xmonad?" $ spawn $ "tmux kill-session -t tmuxa-remonad; xdotool search NSP_remonad windowkill; " ++ nspRemonadCmd
 
 singleCommandTermCmd :: String -> String -> String -> String
 singleCommandTermCmd cls tmuxSessionID initCmd =
@@ -877,7 +877,7 @@ pnpDefs' :: [PNPDef] = [
     (
       (
         "PNP_log",
-        if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --no-before"
+        if debug then singleCommandTermCmd "PNP_log" "tmuxa-pnp-log" "xmdebug --from-beginning"
               ++ "; [ ! -f $HOME/.xmonad-init-flag ] && tmux-pane-view --class=PNP_log"
           else "tmux-pane-view --class=PNP_log",
         className =? "PNP_log",
@@ -1351,11 +1351,14 @@ getKeybindings conf =
          ((altMask, xK_Escape),
            do
              ws <- gets windowset
-             tmuxa2 <- GNP.getNextMatch (winQuery False False "NSP_tmuxa-2") GNP.Forward
-             let focused = W.focus <$> W.stack (W.workspace (W.current ws))
-             if focused == tmuxa2
-               then hideNSP "NSP_tmuxa-2"
-               else openNSPOnScreen "NSP_tmuxa-1" 0
+             let focused' = runQuery className . W.focus <$> W.stack (W.workspace (W.current ws))
+             if isJust focused' then do
+              focused <- fromJust focused'
+              if focused == "NSP_tmuxa-2" then hideNSP "NSP_tmuxa-2"
+              else if focused == "NSP_remonad" then hideNSP "NSP_remonad"
+              else openNSPOnScreen "NSP_tmuxa-1" 0
+             else do
+              openNSPOnScreen "NSP_tmuxa-1" 0
          ),
          ( (altMask + controlMask, xK_Escape),
            do
@@ -1463,7 +1466,7 @@ getKeybindings conf =
           ),
          ((winMask + altMask, xK_q), confirmRemonad),
          ((altMask + controlMask + shiftMask, xK_F10), spawn "xlock -mode random"),
-         ((altMask + controlMask + shiftMask, xK_F11), spawn "toggle-kp --off; systemctl suspend"),
+         ((altMask + controlMask + shiftMask, xK_F11), spawn "systemctl suspend"),
          ((winMask + altMask + controlMask + shiftMask, xK_F11), confirmCmd "sudo reboot now"),
          ((winMask + altMask + controlMask + shiftMask, xK_F12), confirmCmd "shutdown now"),
          ((winMask + shiftMask, xK_q), confirm "logout" $ io exitSuccess),
@@ -1473,7 +1476,8 @@ getKeybindings conf =
          -- scripts
          ((altMask + shiftMask, xK_Delete), spawn "vpnctrl --up"),
          ((altMask + shiftMask + controlMask, xK_Delete), spawn "vpnctrl --down"),
-         ((altMask, xK_slash), spawn "toggle-kp")
+         ((altMask+shiftMask, xK_slash), spawn "toggle-kp"),
+         ((altMask, xK_slash), spawn "toggle-screen-blanking")
          ---------------------------------------------------------------
          -- ephemeral
         --  ( (altMask, xK_1),
@@ -1522,7 +1526,6 @@ getConf xmproc =
 ------------------------------------------------------------------------
 -- main:
 main = do
-  xmproc <- spawnPipe "/usr/bin/xmobar -x 2 $HOME/.xmonad/xmobarrc"
-  spawn "get-kp-status"
+  xmproc <- spawnPipe "/usr/bin/xmobar -x 2 $HOME/.xmonad/xmobarrc; toggle-screen-blanking --init; toggle-kp --init"
   let conf = getConf xmproc
   xmonad $ ewmh $ docks $ conf `additionalKeys` getKeybindings conf
